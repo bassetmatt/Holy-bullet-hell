@@ -16,6 +16,9 @@ struct Rect2D {
     width: f32,
     height: f32,
 }
+
+//TODO remove
+#[allow(dead_code)]
 struct Character {
     pos: Point2<f32>,
     playable: bool,
@@ -23,6 +26,8 @@ struct Character {
     size_hit: Rect2D,
 }
 
+//TODO remove
+#[allow(dead_code)]
 struct Projectile {
     pos: Point2<f32>,
     vel: Vector2<f32>,
@@ -39,6 +44,7 @@ fn main() -> Result<(), Error> {
     let window = {
         let size = LogicalSize::new(W_WIDTH as f64, W_HEIGHT as f64);
         let max_size = LogicalSize::new((2 * W_WIDTH) as f64, (2 * W_HEIGHT) as f64);
+        //Test for window icon
         #[rustfmt::skip]
         let window_icon = Some(
             Icon::from_rgba(
@@ -54,7 +60,7 @@ fn main() -> Result<(), Error> {
             .unwrap(),
         );
         WindowBuilder::new()
-            .with_title("Definitely Touhou 20")
+            .with_title("Holy Bullet Hell")
             .with_inner_size(size)
             .with_min_inner_size(size)
             .with_max_inner_size(max_size)
@@ -229,7 +235,8 @@ impl Character {
 }
 
 impl Projectile {
-    fn new() -> Self {
+    //TODO rename when used
+    fn _new() -> Self {
         Self {
             pos: (0., 0.).into(),
             vel: (0., 0.).into(),

@@ -1,7 +1,10 @@
 # Holy Bullet Hell
-## Compile
+
+## Dependencies
+Rust.
+## Compile and run
 ```bash
 cargo run
 ```
 ### Azerty layout
-If you want to use azerty layout compile with `--features kb_azerty`
+If you want to use azerty layout compile/run with `--features kb_azerty`
