@@ -1,318 +1,367 @@
-use cgmath::{Point2, Vector2};
-use error_iter::ErrorIter as _;
-use image;
-use log::error;
-use pixels::{Error, Pixels, SurfaceTexture};
-use std::time::Instant;
-use winit::dpi::{LogicalPosition, LogicalSize};
-use winit::event::{Event, VirtualKeyCode};
+use cgmath::{Point2, Vector2, Zero};
+use pixels::{Error, SurfaceTexture};
+use std::thread::sleep;
+use std::time::Duration;
+use winit::dpi::PhysicalSize;
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::{Icon, WindowBuilder};
-use winit_input_helper::WinitInputHelper;
+use winit::window::WindowBuilder;
 
-const W_WIDTH: u32 = 320;
-const W_HEIGHT: u32 = 240;
+#[derive(Clone, Copy)]
+struct Dimensions<T: Copy> {
+	w: T,
+	h: T,
+}
 
-const SPRITESHEET_PATH: &str = "./assets/spritesheet.png";
+impl From<winit::dpi::PhysicalSize<u32>> for Dimensions<i32> {
+	fn from(size: winit::dpi::PhysicalSize<u32>) -> Dimensions<i32> {
+		Dimensions { w: size.width as i32, h: size.height as i32 }
+	}
+}
 
-struct Rect2D {
-    width: f32,
-    height: f32,
+impl From<winit::dpi::PhysicalSize<u32>> for Dimensions<u32> {
+	fn from(size: winit::dpi::PhysicalSize<u32>) -> Dimensions<u32> {
+		Dimensions { w: size.width, h: size.height }
+	}
+}
+
+#[derive(Clone, Copy)]
+struct Rect {
+	top_left: Point2<i32>,
+	dims: Dimensions<i32>,
+}
+
+impl Rect {
+	fn top(self) -> i32 {
+		self.top_left.y
+	}
+	fn left(self) -> i32 {
+		self.top_left.x
+	}
+	fn bottom_excluded(self) -> i32 {
+		self.top_left.y + self.dims.h
+	}
+	fn right_excluded(self) -> i32 {
+		self.top_left.x + self.dims.w
+	}
+
+	fn contains(self, coords: Point2<i32>) -> bool {
+		self.left() <= coords.x
+			&& coords.x < self.right_excluded()
+			&& self.top() <= coords.y
+			&& coords.y < self.bottom_excluded()
+	}
+
+	fn from_float(pos: Point2<f32>, dims: Dimensions<f32>) -> Rect {
+		Rect {
+			top_left: Point2 {
+				x: (pos.x - dims.w / 2.).round() as i32,
+				y: (pos.y - dims.h / 2.).round() as i32,
+			},
+			dims: Dimensions { w: dims.w.round() as i32, h: dims.h.round() as i32 },
+		}
+	}
+
+	fn iter(self) -> IterPointRect {
+		IterPointRect::with_rect(self)
+	}
+}
+
+struct IterPointRect {
+	current: Point2<i32>,
+	rect: Rect,
+}
+impl IterPointRect {
+	fn with_rect(rect: Rect) -> IterPointRect {
+		IterPointRect { current: rect.top_left, rect }
+	}
+}
+impl Iterator for IterPointRect {
+	type Item = Point2<i32>;
+	fn next(&mut self) -> Option<Point2<i32>> {
+		let coords = self.current;
+		self.current.x += 1;
+		if !self.rect.contains(self.current) {
+			self.current.x = self.rect.left();
+			self.current.y += 1;
+		}
+		if self.rect.contains(coords) {
+			Some(coords)
+		} else {
+			None
+		}
+	}
+}
+
+#[derive(Default)]
+struct Inputs {
+	left: bool,
+	right: bool,
+	up: bool,
+	down: bool,
+	shoot: bool,
+}
+
+impl Inputs {
+	fn new() -> Inputs {
+		Inputs { ..Default::default() }
+	}
 }
 
 //TODO remove
 #[allow(dead_code)]
-struct Character {
-    pos: Point2<f32>,
-    size: Rect2D,
-    size_hit: Rect2D,
-    id: u32,
-    hp: u16,
+struct Player {
+	pos: Point2<f32>,
+	vel: Vector2<f32>,
+	inputs: Inputs,
+	size: Dimensions<f32>,
+	size_hit: Dimensions<f32>,
+	hp: u16,
+}
+impl Player {
+	fn new() -> Self {
+		Self {
+			pos: (25., 25.).into(),
+			vel: (0., 0.).into(),
+			inputs: Inputs::new(),
+			size: Dimensions { w: 48., h: 48. },
+			size_hit: Dimensions { w: 10., h: 10. },
+			hp: 5,
+		}
+	}
 }
 
 //TODO remove
 #[allow(dead_code)]
 struct Projectile {
-    pos: Point2<f32>,
-    vel: Vector2<f32>,
-    sender: u32,
-    variant: u16,
-    size: Rect2D,
+	pos: Point2<f32>,
+	vel: Vector2<f32>,
 }
+
+#[allow(dead_code)]
 struct World {
-    player: Character,
-    projectiles: Vec<Projectile>,
-}
-
-/// Returns the window icon from the stylesheet
-fn load_icon(path: &str) -> Option<Icon> {
-    let icon = {
-        let icon_size = (16, 16);
-        let mut sprite_sheet = image::open(path).expect("Failed to load image");
-        let icon = sprite_sheet.crop(0, 0, icon_size.0, icon_size.1);
-        let px_array: Vec<u8> = icon.as_bytes().into();
-        Icon::from_rgba(px_array, icon_size.0, icon_size.1).unwrap()
-    };
-    return Some(icon);
-}
-
-fn main() -> Result<(), Error> {
-    env_logger::init();
-    let event_loop = EventLoop::new();
-    let mut input = WinitInputHelper::new();
-    let window = {
-        let size = LogicalSize::new(W_WIDTH as f64, W_HEIGHT as f64);
-        let max_size = LogicalSize::new((2 * W_WIDTH) as f64, (2 * W_HEIGHT) as f64);
-        let window_icon = load_icon(SPRITESHEET_PATH);
-        WindowBuilder::new()
-            .with_title("Holy Bullet Hell")
-            .with_inner_size(size)
-            .with_min_inner_size(size)
-            .with_max_inner_size(max_size)
-            .with_window_icon(window_icon)
-            .with_position(LogicalPosition::new(0, 0))
-            .build(&event_loop)
-            .unwrap()
-    };
-
-    let mut pixels = {
-        let window_size = window.inner_size();
-        let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
-        Pixels::new(W_WIDTH, W_HEIGHT, surface_texture)?
-    };
-    let mut world = World::new();
-
-    let mut t = Instant::now();
-    event_loop.run(move |event, _, control_flow| {
-        // Draw the current frame
-        if let Event::RedrawRequested(_) = event {
-            world.draw(pixels.frame_mut());
-            if let Err(err) = pixels.render() {
-                log_error("pixels.render", err);
-                *control_flow = ControlFlow::Exit;
-                return;
-            }
-        }
-
-        // Handle input events
-        if input.update(&event) {
-            let dt = t.elapsed().as_secs_f64();
-            t = Instant::now();
-            println!("FPS: {}", 1. / dt);
-
-            // Close events
-            if input.key_pressed(VirtualKeyCode::Escape) || input.close_requested() {
-                *control_flow = ControlFlow::Exit;
-                return;
-            }
-            struct Keybind {
-                up: VirtualKeyCode,
-                left: VirtualKeyCode,
-                down: VirtualKeyCode,
-                right: VirtualKeyCode,
-                shoot: VirtualKeyCode,
-            }
-            let keybind = if cfg!(feature = "kb_azerty") {
-                Keybind {
-                    up: VirtualKeyCode::Z,
-                    left: VirtualKeyCode::Q,
-                    down: VirtualKeyCode::S,
-                    right: VirtualKeyCode::D,
-                    shoot: VirtualKeyCode::X,
-                }
-            } else {
-                Keybind {
-                    up: VirtualKeyCode::W,
-                    left: VirtualKeyCode::A,
-                    down: VirtualKeyCode::S,
-                    right: VirtualKeyCode::D,
-                    shoot: VirtualKeyCode::X,
-                }
-            };
-            let mut player_move: Vector2<f32> = (0., 0.).into();
-            if input.key_held(keybind.up) || input.key_held(VirtualKeyCode::Up) {
-                player_move += (0., -1.).into();
-            }
-            if input.key_held(keybind.left) || input.key_held(VirtualKeyCode::Left) {
-                player_move += (-1., 0.).into();
-            }
-            if input.key_held(keybind.down) || input.key_held(VirtualKeyCode::Down) {
-                player_move += (0., 1.).into();
-            }
-            if input.key_held(keybind.right) || input.key_held(VirtualKeyCode::Right) {
-                player_move += (1., 0.).into();
-            }
-
-            if input.key_pressed(keybind.shoot) || input.key_held(keybind.shoot) {
-                let proj_pos = world.player.pos + Vector2::new(0., -26.);
-                let proj_vel: Vector2<f32> = (0., -50.).into();
-                let p = Projectile::new(proj_pos, proj_vel, world.player.id);
-                world.projectiles.push(p);
-            }
-
-            // Resize the window
-            if let Some(size) = input.window_resized() {
-                if let Err(err) = pixels.resize_surface(size.width, size.height) {
-                    log_error("pixels.resize_surface", err);
-                    *control_flow = ControlFlow::Exit;
-                    return;
-                }
-            }
-
-            // Update internal state and request a redraw
-
-            world.update(Some(player_move), &dt);
-            window.request_redraw();
-        }
-    });
-}
-
-fn log_error<E: std::error::Error + 'static>(method_name: &str, err: E) {
-    error!("{method_name}() failed: {err}");
-    for source in err.sources().skip(1) {
-        error!("  Caused by: {source}");
-    }
+	player: Player,
+	projectiles: Vec<Projectile>,
+	dims: Dimensions<i32>,
+	dims_f: Dimensions<f32>,
 }
 
 impl World {
-    /// Create a new `World` instance that can draw a moving box.
-    fn new() -> Self {
-        Self {
-            player: Character::new(0),
-            projectiles: Vec::new(),
-        }
-    }
-
-    /// Update the `World` internal state; bounce the box around the screen.
-    fn update(&mut self, player_move: Option<Vector2<f32>>, dt: &f64) {
-        let mut to_remove: Vec<usize> = vec![];
-        for (i, p) in self.projectiles.iter_mut().enumerate() {
-            if p.update(*dt) {
-                to_remove.push(i);
-            };
-        }
-        to_remove.reverse();
-        for i in to_remove {
-            self.projectiles.remove(i);
-        }
-        if let Some(player_move) = player_move {
-            self.player.update_pos(player_move, *dt);
-        }
-    }
-
-    /// Draw the `World` state to the frame buffer.
-    ///
-    /// Assumes the default texture format: `wgpu::TextureFormat::Rgba8UnormSrgb`
-    fn draw(&self, frame: &mut [u8]) {
-        let mut projectiles_pixels: Vec<usize> = vec![];
-
-        for p in self.projectiles.iter() {
-            let x = (p.pos.x - p.size.width / 2.).floor() as u32;
-            let y = (p.pos.y - p.size.height / 2.).floor() as u32;
-            let w = p.size.width as u32;
-            let h = p.size.height as u32;
-            for i in x..(x + w) {
-                for j in y..(y + h) {
-                    projectiles_pixels.push((j * W_WIDTH + i) as usize);
-                }
-            }
-        }
-        projectiles_pixels.sort();
-        for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
-            let x = (i % W_WIDTH as usize) as f32;
-            let y = (i / W_WIDTH as usize) as f32;
-
-            let (inside_hit, inside) = {
-                let px = self.player.pos.x;
-                let py = self.player.pos.y;
-                let hw = self.player.size_hit.width;
-                let hh = self.player.size_hit.height;
-                let pw = self.player.size.width;
-                let ph = self.player.size.height;
-                let in_hit = px - hw / 2. <= x
-                    && x <= px + hw / 2.
-                    && py - hh / 2. <= y
-                    && y <= py + hh / 2.;
-                let in_play = px - pw / 2. <= x
-                    && x <= px + pw / 2.
-                    && py - ph / 2. <= y
-                    && y <= py + ph / 2.;
-                (in_hit, in_play)
-            };
-            let is_proj = projectiles_pixels.binary_search(&i).is_ok();
-            // let is_proj = false;
-            let rgba = if is_proj {
-                [0x00, 0xff, 0x00, 0xff]
-            } else if inside_hit {
-                [0xff, 0x00, 0x00, 0xff]
-            } else if inside {
-                [0x00, 0x00, 0xff, 0xff]
-            } else {
-                [0x5b, 0xce, 0xfa, 0xff]
-            };
-
-            pixel.copy_from_slice(&rgba);
-        }
-    }
+	/// Create a new `World` instance that can draw a moving box.
+	fn start(dims: Dimensions<i32>) -> Self {
+		Self {
+			player: Player::new(),
+			projectiles: Vec::new(),
+			dims,
+			dims_f: Dimensions { w: dims.w as f32, h: dims.h as f32 },
+		}
+	}
 }
 
-impl Character {
-    fn new(id_: u32) -> Self {
-        Self {
-            pos: (25., 25.).into(),
-            size: (50., 50.).into(),
-            size_hit: (10., 10.).into(),
-            id: id_,
-            hp: 2,
-        }
-    }
-
-    fn update_pos(&mut self, delta: Vector2<f32>, dt: f64) {
-        let new_pos = self.pos + delta * 144. * (dt as f32);
-        let hit_w = self.size_hit.width;
-        let hit_h = self.size_hit.height;
-        if hit_w / 2. <= new_pos.x && (new_pos.x + hit_w / 2.) <= (W_WIDTH as f32) {
-            self.pos.x = new_pos.x;
-        }
-        if hit_h / 2. <= new_pos.y && (new_pos.y + hit_h / 2.) <= (W_HEIGHT as f32) {
-            self.pos.y = new_pos.y;
-        }
-    }
+fn draw_rect(
+	pixel_buffer: &mut pixels::Pixels,
+	pixel_buffer_dims: Dimensions<u32>,
+	dst: Rect,
+	color: [u8; 4],
+) {
+	let window = Rect {
+		top_left: (0, 0).into(),
+		dims: Dimensions { w: pixel_buffer_dims.w as i32, h: pixel_buffer_dims.h as i32 },
+	};
+	for coords in dst.iter() {
+		if window.contains(coords) {
+			let pixel_index = coords.y * pixel_buffer_dims.w as i32 + coords.x;
+			let pixel_byte_index = pixel_index as usize * 4;
+			let pixel_bytes = pixel_byte_index..(pixel_byte_index + 4);
+			pixel_buffer.frame_mut()[pixel_bytes].copy_from_slice(&color);
+		}
+	}
 }
 
-impl Projectile {
-    fn new(pos_: Point2<f32>, vel_: Vector2<f32>, origin: u32) -> Self {
-        Self {
-            pos: pos_,
-            vel: vel_,
-            sender: origin,
-            variant: 0,
-            size: (7., 7.).into(),
-        }
-    }
-    fn _but_variant(mut self, var: u16) -> Self {
-        self.variant = var;
-        self
-    }
+fn main() -> Result<(), Error> {
+	env_logger::init();
+	let event_loop = EventLoop::new();
+	let window = {
+		let win_size = PhysicalSize::new(480, 360);
+		WindowBuilder::new()
+			.with_title("Holy Bullet Hell")
+			.with_inner_size(win_size)
+			.with_min_inner_size(win_size)
+			// .with_max_inner_size(max_size)
+			.build(&event_loop)
+			.unwrap()
+	};
+	// Center the window
+	let screen_size = window.available_monitors().next().unwrap().size();
+	let window_outer_size = window.outer_size();
+	window.set_outer_position(winit::dpi::PhysicalPosition::new(
+		screen_size.width / 2 - window_outer_size.width / 2,
+		screen_size.height / 2 - window_outer_size.height / 2,
+	));
 
-    fn update(&mut self, dt: f64) -> bool {
-        self.pos += self.vel * dt as f32;
-        let w = self.size.width;
-        let h = self.size.height;
-        // Out of bounds
-        let destroy = self.pos.x + w / 2. <= 0.
-            || self.pos.x - w / 2. >= (W_WIDTH as f32)
-            || self.pos.y + h / 2. <= 0.
-            || self.pos.y - h / 2. >= (W_HEIGHT as f32);
-        return destroy;
-    }
-}
+	let bg_color = [0x5b, 0xce, 0xfa, 0xff];
+	let bg_color_wgpu = {
+		fn conv_srgb_to_linear(x: f64) -> f64 {
+			// See https://github.com/gfx-rs/wgpu/issues/2326
+			// Stolen from https://github.com/three-rs/three/blob/07e47da5e0673aa9a16526719e16debd59040eec/src/color.rs#L42
+			// (licensed MIT, not a substancial portion so not concerned by license obligations)
+			// Basically the brightness is adjusted somewhere by wgpu or something due to sRGB stuff,
+			// color is hard.
+			if x > 0.04045 {
+				((x + 0.055) / 1.055).powf(2.4)
+			} else {
+				x / 12.92
+			}
+		}
+		pixels::wgpu::Color {
+			r: conv_srgb_to_linear(bg_color[0] as f64 / 255.0),
+			g: conv_srgb_to_linear(bg_color[1] as f64 / 255.0),
+			b: conv_srgb_to_linear(bg_color[2] as f64 / 255.0),
+			a: conv_srgb_to_linear(bg_color[3] as f64 / 255.0),
+		}
+	};
 
-impl From<(f32, f32)> for Rect2D {
-    fn from(value: (f32, f32)) -> Self {
-        Self {
-            width: value.0,
-            height: value.1,
-        }
-    }
+	let frame_buffer_dims: Dimensions<u32> = window.inner_size().into();
+	let mut frame_buffer = {
+		let dims = frame_buffer_dims;
+		let surface_texture = SurfaceTexture::new(dims.w, dims.h, &window);
+		pixels::PixelsBuilder::new(dims.w, dims.h, surface_texture)
+			.clear_color(bg_color_wgpu)
+			.build()
+			.unwrap()
+	};
+	let mut world =
+		World::start(Dimensions { w: frame_buffer_dims.w as i32, h: frame_buffer_dims.h as i32 });
+	// let mut t = Instant::now();
+	use winit::event::*;
+	event_loop.run(move |event, _, control_flow| match event {
+		Event::WindowEvent { window_id, ref event } if window_id == window.id() => match event {
+			WindowEvent::CloseRequested
+			| WindowEvent::KeyboardInput {
+				input:
+					KeyboardInput {
+						state: ElementState::Pressed,
+						virtual_keycode: Some(VirtualKeyCode::Escape),
+						..
+					},
+				..
+			} => {
+				*control_flow = ControlFlow::Exit;
+			},
+			WindowEvent::Resized(size) => {
+				frame_buffer
+					.resize_surface(size.width, size.height)
+					.unwrap();
+			},
+			WindowEvent::KeyboardInput {
+				input: KeyboardInput { state, virtual_keycode: Some(key), .. },
+				..
+			} => match key {
+				VirtualKeyCode::Up => world.player.inputs.up = matches!(state, ElementState::Pressed),
+				VirtualKeyCode::Down => {
+					world.player.inputs.down = matches!(state, ElementState::Pressed)
+				},
+				VirtualKeyCode::Left => {
+					world.player.inputs.left = matches!(state, ElementState::Pressed)
+				},
+				VirtualKeyCode::Right => {
+					world.player.inputs.right = matches!(state, ElementState::Pressed)
+				},
+				VirtualKeyCode::X => world.player.inputs.shoot = matches!(state, ElementState::Pressed),
+				_ => {},
+			},
+			_ => {},
+		},
+		Event::MainEventsCleared => {
+			// Main physics calculations
+			sleep(Duration::from_millis(1));
+
+			// Movement
+			world.player.vel = Vector2::zero();
+			let inputs = &world.player.inputs;
+			if inputs.left {
+				world.player.vel -= Vector2::unit_x();
+			}
+			if inputs.right {
+				world.player.vel += Vector2::unit_x();
+			}
+			if inputs.up {
+				world.player.vel -= Vector2::unit_y();
+			}
+			if inputs.down {
+				world.player.vel += Vector2::unit_y();
+			}
+
+			// Update pos
+			if world.player.vel != Vector2::zero() {
+				let new_pos = world.player.pos + 10. * world.player.vel;
+				// Separate x and y checks to allow orthogonal movement while on the edge
+				if 0. <= new_pos.x && new_pos.x <= world.dims_f.w {
+					world.player.pos.x = new_pos.x;
+				}
+				if 0. <= new_pos.y && new_pos.y <= world.dims_f.h {
+					world.player.pos.y = new_pos.y;
+				}
+			}
+			if inputs.shoot {
+				let proj = Projectile {
+					pos: world.player.pos - world.player.size.h / 2. * Vector2::unit_y(),
+					vel: Vector2::unit_y() * -10.,
+				};
+				world.projectiles.push(proj);
+			}
+			let mut to_remove: Vec<usize> = vec![];
+			for (i, proj) in world.projectiles.iter_mut().enumerate() {
+				proj.pos += proj.vel;
+				if proj.pos.x < 0.
+					|| proj.pos.x >= world.dims_f.w
+					|| proj.pos.y < 0.
+					|| proj.pos.y >= world.dims_f.h
+				{
+					to_remove.push(i);
+				}
+			}
+			to_remove.reverse();
+			for i in to_remove {
+				world.projectiles.remove(i);
+			}
+
+			////////////
+			// Drawing
+
+			// Draws Background
+			frame_buffer
+				.frame_mut()
+				.chunks_exact_mut(4)
+				.for_each(|pixel| pixel.copy_from_slice(&bg_color));
+
+			// Draws everything else
+			draw_rect(
+				&mut frame_buffer,
+				frame_buffer_dims,
+				Rect::from_float(world.player.pos, world.player.size),
+				[0x00, 0x00, 0xff, 0xff],
+			);
+
+			draw_rect(
+				&mut frame_buffer,
+				frame_buffer_dims,
+				Rect::from_float(world.player.pos, world.player.size_hit),
+				[0xff, 0x00, 0x00, 0xff],
+			);
+
+			for proj in world.projectiles.iter() {
+				draw_rect(
+					&mut frame_buffer,
+					frame_buffer_dims,
+					Rect::from_float(proj.pos, Dimensions { w: 10., h: 10. }),
+					[0x00, 0xff, 0x00, 0xff],
+				)
+			}
+			window.request_redraw();
+		},
+		Event::RedrawRequested(_) => {
+			frame_buffer.render().unwrap();
+		},
+		_ => {},
+	});
 }
