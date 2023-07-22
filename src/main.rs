@@ -12,17 +12,18 @@ struct Dimensions<T: Copy> {
 	h: T,
 }
 
-impl From<winit::dpi::PhysicalSize<u32>> for Dimensions<i32> {
-	fn from(size: winit::dpi::PhysicalSize<u32>) -> Dimensions<i32> {
-		Dimensions { w: size.width as i32, h: size.height as i32 }
-	}
+macro_rules! dim_to_physical_size {
+	($type: ty) => {
+		impl From<winit::dpi::PhysicalSize<u32>> for Dimensions<$type> {
+			fn from(size: winit::dpi::PhysicalSize<u32>) -> Dimensions<$type> {
+				Dimensions { w: size.width as $type, h: size.height as $type }
+			}
+		}
+	};
 }
 
-impl From<winit::dpi::PhysicalSize<u32>> for Dimensions<u32> {
-	fn from(size: winit::dpi::PhysicalSize<u32>) -> Dimensions<u32> {
-		Dimensions { w: size.width, h: size.height }
-	}
-}
+dim_to_physical_size!(u32);
+dim_to_physical_size!(i32);
 
 #[derive(Clone, Copy)]
 struct Rect {
@@ -61,6 +62,25 @@ impl Rect {
 		}
 	}
 
+	fn life_bar_full(pos: Point2<f32>, dims: Dimensions<f32>) -> Rect {
+		Rect {
+			top_left: Point2 {
+				x: (pos.x - dims.w / 2.).round() as i32,
+				y: (pos.y - dims.h / 2.).round() as i32 - 8,
+			},
+			dims: Dimensions { w: dims.w.round() as i32, h: 8 },
+		}
+	}
+	fn life_bar(pos: Point2<f32>, dims: Dimensions<f32>, hp_ratio: f32) -> Rect {
+		Rect {
+			top_left: Point2 {
+				x: (pos.x - dims.w / 2.).round() as i32,
+				y: (pos.y - dims.h / 2.).round() as i32 - 8,
+			},
+			dims: Dimensions { w: (dims.w * hp_ratio).round() as i32, h: 8 },
+		}
+	}
+
 	fn iter(self) -> IterPointRect {
 		IterPointRect::with_rect(self)
 	}
@@ -70,11 +90,13 @@ struct IterPointRect {
 	current: Point2<i32>,
 	rect: Rect,
 }
+
 impl IterPointRect {
 	fn with_rect(rect: Rect) -> IterPointRect {
 		IterPointRect { current: rect.top_left, rect }
 	}
 }
+
 impl Iterator for IterPointRect {
 	type Item = Point2<i32>;
 	fn next(&mut self) -> Option<Point2<i32>> {
@@ -117,6 +139,7 @@ struct Player {
 	size_hit: Dimensions<f32>,
 	hp: u16,
 }
+
 impl Player {
 	fn new() -> Self {
 		Self {
@@ -132,6 +155,24 @@ impl Player {
 
 //TODO remove
 #[allow(dead_code)]
+struct Enemy {
+	pos: Point2<f32>,
+	vel: Vector2<f32>,
+	size: Dimensions<f32>,
+	hp: u16,
+}
+
+impl Enemy {
+	fn new() -> Self {
+		Self {
+			pos: (150., 40.).into(),
+			vel: Vector2::zero(),
+			size: Dimensions { w: 48., h: 48. },
+			hp: 400,
+		}
+	}
+}
+
 struct Projectile {
 	pos: Point2<f32>,
 	vel: Vector2<f32>,
@@ -141,6 +182,7 @@ struct Projectile {
 struct World {
 	player: Player,
 	projectiles: Vec<Projectile>,
+	enemies: Vec<Enemy>,
 	dims: Dimensions<i32>,
 	dims_f: Dimensions<f32>,
 }
@@ -148,9 +190,13 @@ struct World {
 impl World {
 	/// Create a new `World` instance that can draw a moving box.
 	fn start(dims: Dimensions<i32>) -> Self {
+		let enemy1 = Enemy::new();
+		let mut enemy2 = Enemy::new();
+		enemy2.pos += (90., 10.).into();
 		Self {
 			player: Player::new(),
 			projectiles: Vec::new(),
+			enemies: vec![enemy1, enemy2],
 			dims,
 			dims_f: Dimensions { w: dims.w as f32, h: dims.h as f32 },
 		}
@@ -293,7 +339,7 @@ fn main() -> Result<(), Error> {
 
 			// Update pos
 			if world.player.vel != Vector2::zero() {
-				let new_pos = world.player.pos + 10. * world.player.vel;
+				let new_pos = world.player.pos + 5. * world.player.vel;
 				// Separate x and y checks to allow orthogonal movement while on the edge
 				if 0. <= new_pos.x && new_pos.x <= world.dims_f.w {
 					world.player.pos.x = new_pos.x;
@@ -305,11 +351,26 @@ fn main() -> Result<(), Error> {
 			if inputs.shoot {
 				let proj = Projectile {
 					pos: world.player.pos - world.player.size.h / 2. * Vector2::unit_y(),
-					vel: Vector2::unit_y() * -10.,
+					vel: Vector2::unit_y() * -5.,
 				};
 				world.projectiles.push(proj);
 			}
 			let mut to_remove: Vec<usize> = vec![];
+			fn collide_rectangle(
+				pos_a: Point2<f32>,
+				pos_b: Point2<f32>,
+				size_a: Dimensions<f32>,
+				size_b: Dimensions<f32>,
+			) -> bool {
+				((pos_a.x - size_a.w / 2. <= pos_b.x - size_b.w / 2.
+					&& pos_b.x - size_b.w / 2. <= pos_a.x + size_a.w / 2.)
+					|| (pos_a.x - size_a.w / 2. <= pos_b.x + size_b.w / 2.
+						&& pos_b.x + size_b.w / 2. <= pos_a.x + size_a.w / 2.))
+					&& ((pos_a.y - size_a.h / 2. <= pos_b.y - size_b.h / 2.
+						&& pos_b.y - size_b.h / 2. <= pos_a.y + size_a.h / 2.)
+						|| (pos_a.y - size_a.h / 2. <= pos_b.y + size_b.h / 2.
+							&& pos_b.y + size_b.h / 2. <= pos_a.y + size_a.h / 2.))
+			}
 			for (i, proj) in world.projectiles.iter_mut().enumerate() {
 				proj.pos += proj.vel;
 				if proj.pos.x < 0.
@@ -318,10 +379,25 @@ fn main() -> Result<(), Error> {
 					|| proj.pos.y >= world.dims_f.h
 				{
 					to_remove.push(i);
+				} else {
+					for (j, enemy) in world.enemies.iter_mut().enumerate() {
+						if collide_rectangle(
+							enemy.pos,
+							proj.pos,
+							enemy.size,
+							Dimensions { w: 10., h: 10. },
+						) {
+							enemy.hp -= 4;
+							to_remove.push(i);
+							if enemy.hp == 0 {
+								world.enemies.remove(j);
+								break;
+							}
+						}
+					}
 				}
 			}
-			to_remove.reverse();
-			for i in to_remove {
+			for i in to_remove.into_iter().rev() {
 				world.projectiles.remove(i);
 			}
 
@@ -348,6 +424,27 @@ fn main() -> Result<(), Error> {
 				Rect::from_float(world.player.pos, world.player.size_hit),
 				[0xff, 0x00, 0x00, 0xff],
 			);
+
+			for enemy in world.enemies.iter() {
+				draw_rect(
+					&mut frame_buffer,
+					frame_buffer_dims,
+					Rect::from_float(enemy.pos, enemy.size),
+					[0xff, 0x00, 0xff, 0xff],
+				);
+				draw_rect(
+					&mut frame_buffer,
+					frame_buffer_dims,
+					Rect::life_bar_full(enemy.pos, enemy.size),
+					[0xff, 0x00, 0x00, 0xff],
+				);
+				draw_rect(
+					&mut frame_buffer,
+					frame_buffer_dims,
+					Rect::life_bar(enemy.pos, enemy.size, enemy.hp as f32 / 400.),
+					[0x00, 0xff, 0x00, 0xff],
+				);
+			}
 
 			for proj in world.projectiles.iter() {
 				draw_rect(
