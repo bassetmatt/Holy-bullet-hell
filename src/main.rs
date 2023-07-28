@@ -1,10 +1,13 @@
 use cgmath::{Point2, Vector2, Zero};
 use pixels::{Error, SurfaceTexture};
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use winit::dpi::PhysicalSize;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
+
+const DT_60: f32 = 1. / 60.;
+// const DT_144: f32 = 1. / 144.;
 
 #[derive(Clone, Copy)]
 struct Dimensions<T: Copy> {
@@ -129,8 +132,6 @@ impl Inputs {
 	}
 }
 
-//TODO remove
-#[allow(dead_code)]
 struct Player {
 	pos: Point2<f32>,
 	vel: Vector2<f32>,
@@ -138,37 +139,59 @@ struct Player {
 	size: Dimensions<f32>,
 	size_hit: Dimensions<f32>,
 	hp: u16,
+	hp_cd: Cooldown,
+	proj_cd: Cooldown,
 }
 
 impl Player {
 	fn new() -> Self {
 		Self {
-			pos: (25., 25.).into(),
+			pos: (75., 200.).into(),
 			vel: (0., 0.).into(),
 			inputs: Inputs::new(),
 			size: Dimensions { w: 48., h: 48. },
 			size_hit: Dimensions { w: 10., h: 10. },
 			hp: 5,
+			hp_cd: Cooldown::new(Duration::from_secs_f32(20. * DT_60)),
+			proj_cd: Cooldown::new(Duration::from_secs_f32(5. * DT_60)),
 		}
 	}
 }
 
-//TODO remove
-#[allow(dead_code)]
+struct Cooldown {
+	last_emit: Option<Instant>,
+	cooldown: Duration,
+}
+
+impl Cooldown {
+	fn new(value: Duration) -> Self {
+		Cooldown { last_emit: None, cooldown: value }
+	}
+
+	fn is_over(&self) -> bool {
+		if let Some(last) = self.last_emit {
+			return Instant::elapsed(&last) >= self.cooldown;
+		}
+		true
+	}
+}
+
 struct Enemy {
 	pos: Point2<f32>,
-	vel: Vector2<f32>,
+	_vel: Vector2<f32>,
 	size: Dimensions<f32>,
 	hp: u16,
+	proj_cd: Cooldown,
 }
 
 impl Enemy {
 	fn new() -> Self {
 		Self {
 			pos: (150., 40.).into(),
-			vel: Vector2::zero(),
+			_vel: Vector2::zero(),
 			size: Dimensions { w: 48., h: 48. },
 			hp: 400,
+			proj_cd: Cooldown::new(Duration::from_secs_f32(10. * DT_60)),
 		}
 	}
 }
@@ -178,12 +201,11 @@ struct Projectile {
 	vel: Vector2<f32>,
 }
 
-#[allow(dead_code)]
 struct World {
 	player: Player,
 	projectiles: Vec<Projectile>,
 	enemies: Vec<Enemy>,
-	dims: Dimensions<i32>,
+	_dims: Dimensions<i32>,
 	dims_f: Dimensions<f32>,
 }
 
@@ -197,7 +219,7 @@ impl World {
 			player: Player::new(),
 			projectiles: Vec::new(),
 			enemies: vec![enemy1, enemy2],
-			dims,
+			_dims: dims,
 			dims_f: Dimensions { w: dims.w as f32, h: dims.h as f32 },
 		}
 	}
@@ -278,6 +300,7 @@ fn main() -> Result<(), Error> {
 	let mut world =
 		World::start(Dimensions { w: frame_buffer_dims.w as i32, h: frame_buffer_dims.h as i32 });
 	// let mut t = Instant::now();
+
 	use winit::event::*;
 	event_loop.run(move |event, _, control_flow| match event {
 		Event::WindowEvent { window_id, ref event } if window_id == window.id() => match event {
@@ -320,42 +343,53 @@ fn main() -> Result<(), Error> {
 		Event::MainEventsCleared => {
 			// Main physics calculations
 			sleep(Duration::from_millis(1));
-
+			let player = &mut world.player;
 			// Movement
-			world.player.vel = Vector2::zero();
-			let inputs = &world.player.inputs;
+			player.vel = Vector2::zero();
+			let inputs = &player.inputs;
 			if inputs.left {
-				world.player.vel -= Vector2::unit_x();
+				player.vel -= Vector2::unit_x();
 			}
 			if inputs.right {
-				world.player.vel += Vector2::unit_x();
+				player.vel += Vector2::unit_x();
 			}
 			if inputs.up {
-				world.player.vel -= Vector2::unit_y();
+				player.vel -= Vector2::unit_y();
 			}
 			if inputs.down {
-				world.player.vel += Vector2::unit_y();
+				player.vel += Vector2::unit_y();
 			}
 
 			// Update pos
-			if world.player.vel != Vector2::zero() {
-				let new_pos = world.player.pos + 5. * world.player.vel;
+			if player.vel != Vector2::zero() {
+				let new_pos = player.pos + 5. * player.vel;
 				// Separate x and y checks to allow orthogonal movement while on the edge
 				if 0. <= new_pos.x && new_pos.x <= world.dims_f.w {
-					world.player.pos.x = new_pos.x;
+					player.pos.x = new_pos.x;
 				}
 				if 0. <= new_pos.y && new_pos.y <= world.dims_f.h {
-					world.player.pos.y = new_pos.y;
+					player.pos.y = new_pos.y;
 				}
 			}
-			if inputs.shoot {
+			if inputs.shoot & player.proj_cd.is_over() {
 				let proj = Projectile {
-					pos: world.player.pos - world.player.size.h / 2. * Vector2::unit_y(),
+					pos: player.pos - player.size.h / 2. * Vector2::unit_y(),
 					vel: Vector2::unit_y() * -5.,
 				};
 				world.projectiles.push(proj);
+				player.proj_cd.last_emit = Some(Instant::now());
 			}
-			let mut to_remove: Vec<usize> = vec![];
+			for enemy in world.enemies.iter_mut() {
+				if enemy.proj_cd.is_over() {
+					let proj = Projectile {
+						pos: enemy.pos + enemy.size.h * 0.6 * Vector2::unit_y(),
+						vel: Vector2::unit_y() * 5.,
+					};
+					world.projectiles.push(proj);
+					enemy.proj_cd.last_emit = Some(Instant::now());
+				}
+			}
+
 			fn collide_rectangle(
 				pos_a: Point2<f32>,
 				pos_b: Point2<f32>,
@@ -371,6 +405,7 @@ fn main() -> Result<(), Error> {
 						|| (pos_a.y - size_a.h / 2. <= pos_b.y + size_b.h / 2.
 							&& pos_b.y + size_b.h / 2. <= pos_a.y + size_a.h / 2.))
 			}
+			let mut to_remove: Vec<usize> = vec![];
 			for (i, proj) in world.projectiles.iter_mut().enumerate() {
 				proj.pos += proj.vel;
 				if proj.pos.x < 0.
@@ -395,6 +430,23 @@ fn main() -> Result<(), Error> {
 							}
 						}
 					}
+					if player.hp_cd.is_over()
+						& collide_rectangle(
+							player.pos,
+							proj.pos,
+							player.size_hit,
+							Dimensions { w: 10., h: 10. },
+						) {
+						player.hp -= 1;
+						to_remove.push(i);
+						if player.hp == 0 {
+							// Goofiest dead message
+							println!("Ur so dead 💀, RIP BOZO 🔫🔫😂😂😂😂");
+							*control_flow = ControlFlow::Exit;
+							break;
+						}
+						player.hp_cd.last_emit = Some(Instant::now());
+					}
 				}
 			}
 			for i in to_remove.into_iter().rev() {
@@ -414,14 +466,14 @@ fn main() -> Result<(), Error> {
 			draw_rect(
 				&mut frame_buffer,
 				frame_buffer_dims,
-				Rect::from_float(world.player.pos, world.player.size),
+				Rect::from_float(player.pos, player.size),
 				[0x00, 0x00, 0xff, 0xff],
 			);
 
 			draw_rect(
 				&mut frame_buffer,
 				frame_buffer_dims,
-				Rect::from_float(world.player.pos, world.player.size_hit),
+				Rect::from_float(player.pos, player.size_hit),
 				[0xff, 0x00, 0x00, 0xff],
 			);
 
