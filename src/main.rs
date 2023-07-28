@@ -15,9 +15,9 @@ struct Dimensions<T: Copy> {
 	h: T,
 }
 
-impl<T: Copy> Into<Dimensions<T>> for (T, T) {
-	fn into(self) -> Dimensions<T> {
-		Dimensions { w: self.0, h: self.1 }
+impl<T: Copy> From<(T, T)> for Dimensions<T> {
+	fn from((w, h): (T, T)) -> Dimensions<T> {
+		Dimensions { w, h }
 	}
 }
 
