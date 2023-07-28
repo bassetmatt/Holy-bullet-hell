@@ -249,7 +249,7 @@ fn main() -> Result<(), Error> {
 	env_logger::init();
 	let event_loop = EventLoop::new();
 	let window = {
-		let win_size = PhysicalSize::new(480, 360);
+		let win_size = PhysicalSize::new(960, 720);
 		WindowBuilder::new()
 			.with_title("Holy Bullet Hell")
 			.with_inner_size(win_size)
