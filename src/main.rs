@@ -1,4 +1,4 @@
-use cgmath::{Point2, Vector2, Zero};
+use cgmath::{InnerSpace, Point2, Vector2, Zero};
 use pixels::{Error, SurfaceTexture};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
@@ -13,6 +13,12 @@ const DT_60: f32 = 1. / 60.;
 struct Dimensions<T: Copy> {
 	w: T,
 	h: T,
+}
+
+impl<T: Copy> Into<Dimensions<T>> for (T, T) {
+	fn into(self) -> Dimensions<T> {
+		Dimensions { w: self.0, h: self.1 }
+	}
 }
 
 macro_rules! dim_to_physical_size {
@@ -175,6 +181,10 @@ impl Cooldown {
 		true
 	}
 }
+enum EnemyType {
+	Basic,
+	Sniper,
+}
 
 struct Enemy {
 	pos: Point2<f32>,
@@ -182,23 +192,49 @@ struct Enemy {
 	size: Dimensions<f32>,
 	hp: u16,
 	proj_cd: Cooldown,
+	variant: EnemyType,
 }
 
 impl Enemy {
-	fn new() -> Self {
+	fn new(variant: EnemyType) -> Self {
 		Self {
 			pos: (150., 40.).into(),
 			_vel: Vector2::zero(),
 			size: Dimensions { w: 48., h: 48. },
 			hp: 400,
 			proj_cd: Cooldown::new(Duration::from_secs_f32(10. * DT_60)),
+			variant,
 		}
 	}
+
+	fn color_from_variant(&self) -> [u8; 4] {
+		match self.variant {
+			EnemyType::Basic => [0x60, 0x4f, 0xb2, 0xff],
+			EnemyType::Sniper => [0x9f, 0x16, 0x16, 0xff],
+		}
+	}
+}
+
+enum ProjType {
+	Basic,
+	Aimed,
+	PlayerShoot,
 }
 
 struct Projectile {
 	pos: Point2<f32>,
 	vel: Vector2<f32>,
+	variant: ProjType,
+}
+
+impl Projectile {
+	fn color_from_variant(&self) -> [u8; 4] {
+		match self.variant {
+			ProjType::Basic => [0x00, 0xff, 0x00, 0xff],
+			ProjType::Aimed => [0xff, 0xff, 0x00, 0xff],
+			ProjType::PlayerShoot => [0xff, 0xff, 0xff, 0xff],
+		}
+	}
 }
 
 struct World {
@@ -212,13 +248,16 @@ struct World {
 impl World {
 	/// Create a new `World` instance that can draw a moving box.
 	fn start(dims: Dimensions<i32>) -> Self {
-		let enemy1 = Enemy::new();
-		let mut enemy2 = Enemy::new();
+		let enemy1 = Enemy::new(EnemyType::Basic);
+		let mut enemy2 = Enemy::new(EnemyType::Basic);
 		enemy2.pos += (90., 10.).into();
+		let mut enemy3 = Enemy::new(EnemyType::Sniper);
+		enemy3.pos += (400., 50.).into();
+		enemy3.proj_cd.cooldown = Duration::from_secs_f32(30. * DT_60);
 		Self {
 			player: Player::new(),
 			projectiles: Vec::new(),
-			enemies: vec![enemy1, enemy2],
+			enemies: vec![enemy1, enemy2, enemy3],
 			_dims: dims,
 			dims_f: Dimensions { w: dims.w as f32, h: dims.h as f32 },
 		}
@@ -284,8 +323,8 @@ fn main() -> Result<(), Error> {
 		screen_size.height / 2 - window_outer_size.height / 2,
 	));
 
-	let bg_color = [0x5b, 0xce, 0xfa, 0xff];
-	let bg_color_ui = [0x1e, 0x22, 0x27, 0xff];
+	let bg_color = [0x08, 0x0b, 0x1e, 0xff];
+	let bg_color_ui = [0x20, 0x11, 0x38, 0xff];
 	let bg_color_wgpu = {
 		fn conv_srgb_to_linear(x: f64) -> f64 {
 			// See https://github.com/gfx-rs/wgpu/issues/2326
@@ -396,15 +435,28 @@ fn main() -> Result<(), Error> {
 				let proj = Projectile {
 					pos: player.pos - player.size.h / 2. * Vector2::unit_y(),
 					vel: Vector2::unit_y() * -5.,
+					variant: ProjType::PlayerShoot,
 				};
 				world.projectiles.push(proj);
 				player.proj_cd.last_emit = Some(Instant::now());
 			}
 			for enemy in world.enemies.iter_mut() {
 				if enemy.proj_cd.is_over() {
-					let proj = Projectile {
-						pos: enemy.pos + enemy.size.h * 0.6 * Vector2::unit_y(),
-						vel: Vector2::unit_y() * 5.,
+					let proj = {
+						let pos = enemy.pos + enemy.size.h * 0.6 * Vector2::unit_y();
+						match enemy.variant {
+							EnemyType::Basic => {
+								Projectile { pos, vel: Vector2::unit_y() * 5., variant: ProjType::Basic }
+							},
+							EnemyType::Sniper => {
+								let delta = player.pos - pos;
+								let mut to_player = Vector2::zero();
+								if delta != Vector2::zero() {
+									to_player = delta.normalize();
+								}
+								Projectile { pos, vel: 5. * to_player, variant: ProjType::Aimed }
+							},
+						}
 					};
 					world.projectiles.push(proj);
 					enemy.proj_cd.last_emit = Some(Instant::now());
@@ -443,7 +495,7 @@ fn main() -> Result<(), Error> {
 							enemy.size,
 							Dimensions { w: 10., h: 10. },
 						) {
-							enemy.hp -= 4;
+							enemy.hp -= 16;
 							to_remove.push(i);
 							if enemy.hp == 0 {
 								world.enemies.remove(j);
@@ -497,7 +549,7 @@ fn main() -> Result<(), Error> {
 				Rect::from_float(player.pos, player.size),
 				player_color,
 			);
-
+			// player hitbox
 			draw_rect(
 				&mut frame_buffer,
 				frame_buffer_dims,
@@ -505,12 +557,13 @@ fn main() -> Result<(), Error> {
 				[0xff, 0x00, 0x00, 0xff],
 			);
 
+			// enemies
 			for enemy in world.enemies.iter() {
 				draw_rect(
 					&mut frame_buffer,
 					frame_buffer_dims,
 					Rect::from_float(enemy.pos, enemy.size),
-					[0xff, 0x00, 0xff, 0xff],
+					enemy.color_from_variant(),
 				);
 				draw_rect(
 					&mut frame_buffer,
@@ -526,12 +579,13 @@ fn main() -> Result<(), Error> {
 				);
 			}
 
+			//projectiles
 			for proj in world.projectiles.iter() {
 				draw_rect(
 					&mut frame_buffer,
 					frame_buffer_dims,
 					Rect::from_float(proj.pos, Dimensions { w: 10., h: 10. }),
-					[0x00, 0xff, 0x00, 0xff],
+					proj.color_from_variant(),
 				)
 			}
 
@@ -545,7 +599,17 @@ fn main() -> Result<(), Error> {
 						pixel.copy_from_slice(&bg_color_ui)
 					}
 				});
-
+			for i in 0..player.hp {
+				draw_rect(
+					&mut frame_buffer,
+					frame_buffer_dims,
+					Rect {
+						top_left: (1040 + 48 * i as i32, 256).into(),
+						dims: (32, 32).into(),
+					},
+					[0x11, 0x81, 0x0c, 0xff],
+				)
+			}
 			window.request_redraw();
 		},
 		Event::RedrawRequested(_) => {

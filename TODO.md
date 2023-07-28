@@ -10,7 +10,7 @@
   - [ ] More infos on game
 
 ## Render
-- [ ] Transparency for invincibility frames
+- [x] Transparency for invincibility frames
 - [ ] Have sprites
 
 ## Gameplay
