@@ -152,7 +152,7 @@ impl Player {
 			size: Dimensions { w: 48., h: 48. },
 			size_hit: Dimensions { w: 10., h: 10. },
 			hp: 5,
-			hp_cd: Cooldown::new(Duration::from_secs_f32(20. * DT_60)),
+			hp_cd: Cooldown::new(Duration::from_secs_f32(2.)),
 			proj_cd: Cooldown::new(Duration::from_secs_f32(5. * DT_60)),
 		}
 	}
@@ -225,11 +225,17 @@ impl World {
 	}
 }
 
+macro_rules! opacity {
+	($color: expr, $bg: expr, $alpha:expr, $index: literal) => {
+		($alpha * ($color[$index] as f32) + (1. - $alpha) * ($bg[$index] as f32)).round() as u8
+	};
+}
+
 fn draw_rect(
 	pixel_buffer: &mut pixels::Pixels,
 	pixel_buffer_dims: Dimensions<u32>,
 	dst: Rect,
-	color: [u8; 4],
+	mut color: [u8; 4],
 ) {
 	let window = Rect {
 		top_left: (0, 0).into(),
@@ -240,6 +246,16 @@ fn draw_rect(
 			let pixel_index = coords.y * pixel_buffer_dims.w as i32 + coords.x;
 			let pixel_byte_index = pixel_index as usize * 4;
 			let pixel_bytes = pixel_byte_index..(pixel_byte_index + 4);
+			if color[3] == 0x00 {
+				continue;
+			} else if color[3] != 0xff {
+				let old_color = pixel_buffer.frame_mut().get(pixel_bytes.clone()).unwrap();
+				let alpha = color[3] as f32 / 255.;
+				color[0] = opacity!(color, old_color, alpha, 0);
+				color[1] = opacity!(color, old_color, alpha, 1);
+				color[2] = opacity!(color, old_color, alpha, 2);
+				color[3] = 0xff;
+			}
 			pixel_buffer.frame_mut()[pixel_bytes].copy_from_slice(&color);
 		}
 	}
@@ -468,11 +484,18 @@ fn main() -> Result<(), Error> {
 				.for_each(|pixel| pixel.copy_from_slice(&bg_color));
 
 			// Draws everything else
+
+			//Player
+			let player_color = if player.hp_cd.is_over() {
+				[0x00, 0x00, 0xff, 0xff]
+			} else {
+				[0x00, 0x00, 0xff, 0x50]
+			};
 			draw_rect(
 				&mut frame_buffer,
 				frame_buffer_dims,
 				Rect::from_float(player.pos, player.size),
-				[0x00, 0x00, 0xff, 0xff],
+				player_color,
 			);
 
 			draw_rect(
@@ -511,6 +534,8 @@ fn main() -> Result<(), Error> {
 					[0x00, 0xff, 0x00, 0xff],
 				)
 			}
+
+			// Interface
 			frame_buffer
 				.frame_mut()
 				.chunks_exact_mut(4)
