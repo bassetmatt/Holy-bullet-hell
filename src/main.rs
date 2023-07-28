@@ -246,15 +246,17 @@ fn draw_rect(
 }
 
 fn main() -> Result<(), Error> {
+	const WIN_W: u32 = 1280;
+	const WIN_H: u32 = 720;
 	env_logger::init();
 	let event_loop = EventLoop::new();
 	let window = {
-		let win_size = PhysicalSize::new(960, 720);
+		let win_size = PhysicalSize::new(WIN_W, WIN_H);
 		WindowBuilder::new()
 			.with_title("Holy Bullet Hell")
 			.with_inner_size(win_size)
 			.with_min_inner_size(win_size)
-			// .with_max_inner_size(max_size)
+			.with_max_inner_size(win_size)
 			.build(&event_loop)
 			.unwrap()
 	};
@@ -267,6 +269,7 @@ fn main() -> Result<(), Error> {
 	));
 
 	let bg_color = [0x5b, 0xce, 0xfa, 0xff];
+	let bg_color_ui = [0x1e, 0x22, 0x27, 0xff];
 	let bg_color_wgpu = {
 		fn conv_srgb_to_linear(x: f64) -> f64 {
 			// See https://github.com/gfx-rs/wgpu/issues/2326
@@ -281,10 +284,10 @@ fn main() -> Result<(), Error> {
 			}
 		}
 		pixels::wgpu::Color {
-			r: conv_srgb_to_linear(bg_color[0] as f64 / 255.0),
-			g: conv_srgb_to_linear(bg_color[1] as f64 / 255.0),
-			b: conv_srgb_to_linear(bg_color[2] as f64 / 255.0),
-			a: conv_srgb_to_linear(bg_color[3] as f64 / 255.0),
+			r: conv_srgb_to_linear(bg_color_ui[0] as f64 / 255.0),
+			g: conv_srgb_to_linear(bg_color_ui[1] as f64 / 255.0),
+			b: conv_srgb_to_linear(bg_color_ui[2] as f64 / 255.0),
+			a: conv_srgb_to_linear(bg_color_ui[3] as f64 / 255.0),
 		}
 	};
 
@@ -297,8 +300,10 @@ fn main() -> Result<(), Error> {
 			.build()
 			.unwrap()
 	};
-	let mut world =
-		World::start(Dimensions { w: frame_buffer_dims.w as i32, h: frame_buffer_dims.h as i32 });
+	let mut world = World::start(Dimensions {
+		w: (0.8 * frame_buffer_dims.w as f32) as i32,
+		h: frame_buffer_dims.h as i32,
+	});
 	// let mut t = Instant::now();
 
 	use winit::event::*;
@@ -506,6 +511,16 @@ fn main() -> Result<(), Error> {
 					[0x00, 0xff, 0x00, 0xff],
 				)
 			}
+			frame_buffer
+				.frame_mut()
+				.chunks_exact_mut(4)
+				.enumerate()
+				.for_each(|(i, pixel)| {
+					if i % WIN_W as usize > (0.8 * WIN_W as f32) as usize {
+						pixel.copy_from_slice(&bg_color_ui)
+					}
+				});
+
 			window.request_redraw();
 		},
 		Event::RedrawRequested(_) => {
