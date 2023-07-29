@@ -1,21 +1,22 @@
 # TODO
 
 ## Interface
-- [ ] Player HP
+- [x] Player HP
 - [ ] Score ????
 - [ ] Things
 - [ ] Debug
-  - [ ] FPS ?
+  - [x] FPS ?
   - [ ] Time elapsed
   - [ ] More infos on game
 
 ## Render
-- [x] Transparency for invincibility frames
 - [ ] Have sprites
+- [x] Transparency for invincibility frames
+- [x] Text rendering
 
 ## Gameplay
-- [ ] Enemy movement
-- [ ] Enemy variant?
+!- [ ] Enemy movement
+- [x] Enemy variant
 - [x] Health system
 - [x] Collision with bullets system
 - [x] Have enemies

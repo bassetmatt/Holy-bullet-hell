@@ -1,15 +1,15 @@
 use cgmath::{InnerSpace, Point2, Vector2, Zero};
+use image::{DynamicImage, GenericImageView, ImageFormat};
 use pixels::{Error, SurfaceTexture};
-use std::thread::sleep;
+// use std::thread::sleep;
 use std::time::{Duration, Instant};
 use winit::dpi::PhysicalSize;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
-
 const DT_60: f32 = 1. / 60.;
 // const DT_144: f32 = 1. / 144.;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct Dimensions<T: Copy> {
 	w: T,
 	h: T,
@@ -92,6 +92,11 @@ impl Rect {
 
 	fn iter(self) -> IterPointRect {
 		IterPointRect::with_rect(self)
+	}
+
+	fn _iter_dims(self) -> IterPointRect {
+		let rect = Rect { top_left: (0, 0).into(), dims: self.dims };
+		IterPointRect::with_rect(rect)
 	}
 }
 
@@ -243,6 +248,7 @@ struct World {
 	enemies: Vec<Enemy>,
 	_dims: Dimensions<i32>,
 	dims_f: Dimensions<f32>,
+	fps_cd: Cooldown,
 }
 
 impl World {
@@ -260,6 +266,7 @@ impl World {
 			enemies: vec![enemy1, enemy2, enemy3],
 			_dims: dims,
 			dims_f: Dimensions { w: dims.w as f32, h: dims.h as f32 },
+			fps_cd: Cooldown::new(Duration::from_millis(100)),
 		}
 	}
 }
@@ -296,6 +303,85 @@ fn draw_rect(
 				color[3] = 0xff;
 			}
 			pixel_buffer.frame_mut()[pixel_bytes].copy_from_slice(&color);
+		}
+	}
+}
+
+fn char_position(c: char) -> Option<(i32, i32)> {
+	let fourth_line = "`~!@#$%^&*'\".";
+	let fifth_line = "()[]{}?/\\|:;,";
+	let sixth_line = "-+=_<>";
+	match c {
+		'A'..='M' => Some((c as i32 - 'A' as i32, 0)),
+		'N'..='Z' => Some((c as i32 - 'N' as i32, 1)),
+		'0'..='9' => Some((c as i32 - '0' as i32, 2)),
+
+		ch if fourth_line.contains(ch) => {
+			Some((fourth_line.chars().position(|c| c == ch).unwrap() as i32, 3))
+		},
+		ch if fifth_line.contains(ch) => {
+			Some((fifth_line.chars().position(|c| c == ch).unwrap() as i32, 4))
+		},
+		ch if sixth_line.contains(ch) => {
+			Some((sixth_line.chars().position(|c| c == ch).unwrap() as i32, 5))
+		},
+		_ => unimplemented!(),
+	}
+}
+
+fn draw_text(
+	frame_buffer: &mut pixels::Pixels,
+	frame_buffer_dims: Dimensions<u32>,
+	font_sheet: &DynamicImage,
+	dst: Rect,
+	mut color: [u8; 4],
+	text: &str,
+) {
+	if color[3] == 0x00 {
+		return;
+	}
+	let len = text.len() as i32;
+	// Ensures the text zone is a multiple of pixel font size
+	assert_eq!(dst.dims.w % (4 * len), 0);
+	assert_eq!(dst.dims.h % 6, 0);
+	let char_dims = Dimensions { w: dst.dims.w / len, h: dst.dims.h };
+	for (i, c) in text.chars().enumerate() {
+		if c == ' ' {
+			continue;
+		}
+		let char_sheet_coords: Point2<i32> = char_position(c).unwrap().into();
+		let top_left = dst.top_left + Vector2::new(i as i32 * char_dims.w, 0);
+		let dst_c = Rect { top_left, dims: char_dims };
+		let window = Rect {
+			top_left: (0, 0).into(),
+			dims: Dimensions { w: frame_buffer_dims.w as i32, h: frame_buffer_dims.h as i32 },
+		};
+		for coords in dst_c.iter() {
+			if !window.contains(coords) {
+				continue;
+			}
+
+			let is_visible = {
+				let sx = 4 * char_sheet_coords.x + 4 * (coords.x - top_left.x) / char_dims.w;
+				let sy = 6 * char_sheet_coords.y + 6 * (coords.y - top_left.y) / char_dims.h;
+				let px = font_sheet.get_pixel(sx as u32, sy as u32).0;
+				px[3] != 0x00
+			};
+			if !is_visible {
+				continue;
+			}
+			let pixel_index = coords.y * frame_buffer_dims.w as i32 + coords.x;
+			let pixel_byte_index = pixel_index as usize * 4;
+			let pixel_bytes = pixel_byte_index..(pixel_byte_index + 4);
+			if color[3] != 0xff {
+				let old_color = frame_buffer.frame_mut().get(pixel_bytes.clone()).unwrap();
+				let alpha = color[3] as f32 / 255.;
+				color[0] = opacity!(color, old_color, alpha, 0);
+				color[1] = opacity!(color, old_color, alpha, 1);
+				color[2] = opacity!(color, old_color, alpha, 2);
+				color[3] = 0xff;
+			}
+			frame_buffer.frame_mut()[pixel_bytes].copy_from_slice(&color);
 		}
 	}
 }
@@ -359,8 +445,13 @@ fn main() -> Result<(), Error> {
 		w: (0.8 * frame_buffer_dims.w as f32) as i32,
 		h: frame_buffer_dims.h as i32,
 	});
-	// let mut t = Instant::now();
 
+	let font_file = include_bytes!("../assets/font.png");
+	let font_sheet = image::load_from_memory_with_format(font_file, ImageFormat::Png)
+		.expect("Failed to load font file");
+
+	let mut t = Instant::now();
+	let mut dt = Duration::from_secs(1);
 	use winit::event::*;
 	event_loop.run(move |event, _, control_flow| match event {
 		Event::WindowEvent { window_id, ref event } if window_id == window.id() => match event {
@@ -402,7 +493,6 @@ fn main() -> Result<(), Error> {
 		},
 		Event::MainEventsCleared => {
 			// Main physics calculations
-			sleep(Duration::from_millis(1));
 			let player = &mut world.player;
 			// Movement
 			player.vel = Vector2::zero();
@@ -610,6 +700,30 @@ fn main() -> Result<(), Error> {
 					[0x11, 0x81, 0x0c, 0xff],
 				)
 			}
+
+			draw_text(
+				&mut frame_buffer,
+				frame_buffer_dims,
+				&font_sheet,
+				Rect { top_left: (1040, 128).into(), dims: (4 * 4 * 5, 6 * 5 * 2).into() },
+				[0xff, 0x00, 0x00, 0xff],
+				"TEST",
+			);
+			if world.fps_cd.is_over() {
+				dt = Instant::elapsed(&t);
+				world.fps_cd.last_emit = Some(Instant::now());
+			}
+			t = Instant::now();
+			let fps = format!("FPS: {fps:3}", fps = (1. / dt.as_secs_f64()).round() as u32);
+			let text_dims = Dimensions { w: fps.len() as i32 * 4 * 5, h: 6 * 5 };
+			draw_text(
+				&mut frame_buffer,
+				frame_buffer_dims,
+				&font_sheet,
+				Rect { top_left: (WIN_W as i32 - text_dims.w, 0).into(), dims: text_dims },
+				[0xff, 0xff, 0xff, 0xb0],
+				&fps,
+			);
 			window.request_redraw();
 		},
 		Event::RedrawRequested(_) => {
