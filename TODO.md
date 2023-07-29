@@ -15,7 +15,7 @@
 - [x] Text rendering
 
 ## Gameplay
-!- [ ] Enemy movement
+- [ ] Enemy movement
 - [x] Enemy variant
 - [x] Health system
 - [x] Collision with bullets system

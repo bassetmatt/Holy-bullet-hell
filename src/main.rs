@@ -149,7 +149,7 @@ struct Player {
 	inputs: Inputs,
 	size: Dimensions<f32>,
 	size_hit: Dimensions<f32>,
-	hp: u16,
+	hp: u32,
 	hp_cd: Cooldown,
 	proj_cd: Cooldown,
 }
@@ -163,8 +163,8 @@ impl Player {
 			size: Dimensions { w: 48., h: 48. },
 			size_hit: Dimensions { w: 10., h: 10. },
 			hp: 5,
-			hp_cd: Cooldown::new(Duration::from_secs_f32(2.)),
-			proj_cd: Cooldown::new(Duration::from_secs_f32(5. * DT_60)),
+			hp_cd: Cooldown::with_duration(Duration::from_secs_f32(2.)),
+			proj_cd: Cooldown::with_duration(Duration::from_secs_f32(5. * DT_60)),
 		}
 	}
 }
@@ -175,7 +175,11 @@ struct Cooldown {
 }
 
 impl Cooldown {
-	fn new(value: Duration) -> Self {
+	/// Creates cooldown with secs second duration
+	fn new(secs: f32) -> Self {
+		Cooldown { last_emit: None, cooldown: Duration::from_secs_f32(secs) }
+	}
+	fn with_duration(value: Duration) -> Self {
 		Cooldown { last_emit: None, cooldown: value }
 	}
 
@@ -186,6 +190,8 @@ impl Cooldown {
 		true
 	}
 }
+
+#[derive(Clone, Copy)]
 enum EnemyType {
 	Basic,
 	Sniper,
@@ -195,20 +201,46 @@ struct Enemy {
 	pos: Point2<f32>,
 	_vel: Vector2<f32>,
 	size: Dimensions<f32>,
-	hp: u16,
+	hp: f32,
 	proj_cd: Cooldown,
 	variant: EnemyType,
 }
 
 impl Enemy {
-	fn new(variant: EnemyType) -> Self {
+	fn _new(variant: EnemyType) -> Self {
 		Self {
 			pos: (150., 40.).into(),
 			_vel: Vector2::zero(),
 			size: Dimensions { w: 48., h: 48. },
-			hp: 400,
-			proj_cd: Cooldown::new(Duration::from_secs_f32(10. * DT_60)),
+			hp: 400.,
+			proj_cd: Cooldown::with_duration(Duration::from_secs_f32(10. * DT_60)),
 			variant,
+		}
+	}
+
+	fn spawn(pos: Point2<f32>, variant: EnemyType) -> Enemy {
+		let size;
+		let hp;
+		let proj_cd;
+		match variant {
+			EnemyType::Basic => {
+				hp = 100.;
+				size = (48., 48.).into();
+				proj_cd = Cooldown::new(10. * DT_60);
+			},
+			EnemyType::Sniper => {
+				hp = 50.;
+				size = (32., 48.).into();
+				proj_cd = Cooldown::new(30. * DT_60);
+			},
+		};
+		Self { pos, _vel: Vector2::zero(), size, hp, proj_cd, variant }
+	}
+
+	fn hp_max_from_variant(&self) -> f32 {
+		match self.variant {
+			EnemyType::Basic => 100.,
+			EnemyType::Sniper => 50.,
 		}
 	}
 
@@ -254,19 +286,17 @@ struct World {
 impl World {
 	/// Create a new `World` instance that can draw a moving box.
 	fn start(dims: Dimensions<i32>) -> Self {
-		let enemy1 = Enemy::new(EnemyType::Basic);
-		let mut enemy2 = Enemy::new(EnemyType::Basic);
-		enemy2.pos += (90., 10.).into();
-		let mut enemy3 = Enemy::new(EnemyType::Sniper);
-		enemy3.pos += (400., 50.).into();
-		enemy3.proj_cd.cooldown = Duration::from_secs_f32(30. * DT_60);
 		Self {
 			player: Player::new(),
 			projectiles: Vec::new(),
-			enemies: vec![enemy1, enemy2, enemy3],
+			enemies: vec![
+				Enemy::spawn((200., 100.).into(), EnemyType::Basic),
+				Enemy::spawn((300., 100.).into(), EnemyType::Basic),
+				Enemy::spawn((500., 150.).into(), EnemyType::Sniper),
+			],
 			_dims: dims,
 			dims_f: Dimensions { w: dims.w as f32, h: dims.h as f32 },
-			fps_cd: Cooldown::new(Duration::from_millis(100)),
+			fps_cd: Cooldown::with_duration(Duration::from_millis(100)),
 		}
 	}
 }
@@ -585,9 +615,9 @@ fn main() -> Result<(), Error> {
 							enemy.size,
 							Dimensions { w: 10., h: 10. },
 						) {
-							enemy.hp -= 16;
+							enemy.hp -= 2.;
 							to_remove.push(i);
-							if enemy.hp == 0 {
+							if enemy.hp <= 0. {
 								world.enemies.remove(j);
 								break;
 							}
@@ -625,9 +655,7 @@ fn main() -> Result<(), Error> {
 				.chunks_exact_mut(4)
 				.for_each(|pixel| pixel.copy_from_slice(&bg_color));
 
-			// Draws everything else
-
-			//Player
+			// Player
 			let player_color = if player.hp_cd.is_over() {
 				[0x00, 0x00, 0xff, 0xff]
 			} else {
@@ -639,7 +667,8 @@ fn main() -> Result<(), Error> {
 				Rect::from_float(player.pos, player.size),
 				player_color,
 			);
-			// player hitbox
+
+			// Player hitbox
 			draw_rect(
 				&mut frame_buffer,
 				frame_buffer_dims,
@@ -647,7 +676,7 @@ fn main() -> Result<(), Error> {
 				[0xff, 0x00, 0x00, 0xff],
 			);
 
-			// enemies
+			// Enemies
 			for enemy in world.enemies.iter() {
 				draw_rect(
 					&mut frame_buffer,
@@ -664,7 +693,11 @@ fn main() -> Result<(), Error> {
 				draw_rect(
 					&mut frame_buffer,
 					frame_buffer_dims,
-					Rect::life_bar(enemy.pos, enemy.size, enemy.hp as f32 / 400.),
+					Rect::life_bar(
+						enemy.pos,
+						enemy.size,
+						enemy.hp / enemy.hp_max_from_variant(),
+					),
 					[0x00, 0xff, 0x00, 0xff],
 				);
 			}
@@ -709,6 +742,8 @@ fn main() -> Result<(), Error> {
 				[0xff, 0x00, 0x00, 0xff],
 				"TEST",
 			);
+
+			// Limit fps refresh for it to be readable
 			if world.fps_cd.is_over() {
 				dt = Instant::elapsed(&t);
 				world.fps_cd.last_emit = Some(Instant::now());
