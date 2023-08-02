@@ -1,5 +1,10 @@
 # TODO
 
+
+## Code
+- [ ] Refactor `draw_sprite` & `draw_text` asap
+- [ ] Consider putting the drawing stuff in function, and maybe even a separate file
+
 ## Interface
 - [x] Player HP
 - [ ] Score ????
@@ -10,12 +15,12 @@
   - [ ] More infos on game
 
 ## Render
-- [ ] Have sprites
+- [x] Have sprites
 - [x] Transparency for invincibility frames
 - [x] Text rendering
 
 ## Gameplay
-- [ ] Enemy movement
+- [x] Enemy movement
 - [x] Enemy variant
 - [x] Health system
 - [x] Collision with bullets system

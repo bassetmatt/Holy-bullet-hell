@@ -73,6 +73,18 @@ impl Player {
 			proj_cd: Cooldown::with_duration(Duration::from_secs_f32(5. * DT_60)),
 		}
 	}
+
+	fn sprite_coords(&self) -> (u32, u32) {
+		if self.hp_cd.is_over() {
+			(1, 0)
+		} else {
+			(1, 1)
+		}
+	}
+
+	fn sprite_coords_hit(&self) -> (u32, u32) {
+		(0, 0)
+	}
 }
 
 struct Cooldown {
@@ -150,10 +162,10 @@ impl Enemy {
 		}
 	}
 
-	fn color_from_variant(&self) -> [u8; 4] {
+	fn sprite_coords(&self) -> (u32, u32) {
 		match self.variant {
-			EnemyType::Basic => [0x60, 0x4f, 0xb2, 0xff],
-			EnemyType::Sniper => [0x9f, 0x16, 0x16, 0xff],
+			EnemyType::Basic => (2, 0),
+			EnemyType::Sniper => (3, 0),
 		}
 	}
 }
@@ -171,11 +183,11 @@ struct Projectile {
 }
 
 impl Projectile {
-	fn color_from_variant(&self) -> [u8; 4] {
+	fn sprite_coords(&self) -> (u32, u32) {
 		match self.variant {
-			ProjType::Basic => [0x00, 0xff, 0x00, 0xff],
-			ProjType::Aimed => [0xff, 0xff, 0x00, 0xff],
-			ProjType::PlayerShoot => [0xff, 0xff, 0xff, 0xff],
+			ProjType::Basic => (2, 1),
+			ProjType::Aimed => (3, 1),
+			ProjType::PlayerShoot => (0, 1),
 		}
 	}
 }
@@ -270,23 +282,23 @@ fn draw_rect(
 	}
 }
 
-fn char_position(c: char) -> Option<(i32, i32)> {
+fn char_position(c: char) -> Option<(u32, u32)> {
 	let fourth_line = "`~!@#$%^&*'\".";
 	let fifth_line = "()[]{}?/\\|:;,";
 	let sixth_line = "-+=_<>";
 	match c {
-		'A'..='M' => Some((c as i32 - 'A' as i32, 0)),
-		'N'..='Z' => Some((c as i32 - 'N' as i32, 1)),
-		'0'..='9' => Some((c as i32 - '0' as i32, 2)),
+		'A'..='M' => Some((c as u32 - 'A' as u32, 0)),
+		'N'..='Z' => Some((c as u32 - 'N' as u32, 1)),
+		'0'..='9' => Some((c as u32 - '0' as u32, 2)),
 
 		ch if fourth_line.contains(ch) => {
-			Some((fourth_line.chars().position(|c| c == ch).unwrap() as i32, 3))
+			Some((fourth_line.chars().position(|c| c == ch).unwrap() as u32, 3))
 		},
 		ch if fifth_line.contains(ch) => {
-			Some((fifth_line.chars().position(|c| c == ch).unwrap() as i32, 4))
+			Some((fifth_line.chars().position(|c| c == ch).unwrap() as u32, 4))
 		},
 		ch if sixth_line.contains(ch) => {
-			Some((sixth_line.chars().position(|c| c == ch).unwrap() as i32, 5))
+			Some((sixth_line.chars().position(|c| c == ch).unwrap() as u32, 5))
 		},
 		_ => unimplemented!(),
 	}
@@ -312,7 +324,7 @@ fn draw_text(
 		if c == ' ' {
 			continue;
 		}
-		let char_sheet_coords: Point2<i32> = char_position(c).unwrap().into();
+		let char_sheet_coords: Point2<u32> = char_position(c).unwrap().into();
 		let top_left = dst.top_left + Vector2::new(i as i32 * char_dims.w, 0);
 		let dst_c = Rect { top_left, dims: char_dims };
 		let window = Rect {
@@ -325,9 +337,11 @@ fn draw_text(
 			}
 
 			let is_visible = {
-				let sx = 4 * char_sheet_coords.x + 4 * (coords.x - top_left.x) / char_dims.w;
-				let sy = 6 * char_sheet_coords.y + 6 * (coords.y - top_left.y) / char_dims.h;
-				let px = font_sheet.get_pixel(sx as u32, sy as u32).0;
+				let sx =
+					4 * char_sheet_coords.x + 4 * (coords.x - top_left.x) as u32 / char_dims.w as u32;
+				let sy =
+					6 * char_sheet_coords.y + 6 * (coords.y - top_left.y) as u32 / char_dims.h as u32;
+				let px = font_sheet.get_pixel(sx, sy).0;
 				px[3] != 0x00
 			};
 			if !is_visible {
@@ -346,6 +360,47 @@ fn draw_text(
 			}
 			frame_buffer.frame_mut()[pixel_bytes].copy_from_slice(&color);
 		}
+	}
+}
+
+fn draw_sprite(
+	frame_buffer: &mut pixels::Pixels,
+	frame_buffer_dims: Dimensions<u32>,
+	sheet: &DynamicImage,
+	sprite_coords: (u32, u32),
+	dst: Rect,
+) {
+	let window = Rect {
+		top_left: (0, 0).into(),
+		dims: Dimensions { w: frame_buffer_dims.w as i32, h: frame_buffer_dims.h as i32 },
+	};
+	for coords in dst.iter() {
+		if !window.contains(coords) {
+			continue;
+		}
+		let mut px = {
+			const SPRITE_SIZE: u32 = 8;
+			let sx = SPRITE_SIZE * sprite_coords.0
+				+ SPRITE_SIZE * (coords.x - dst.top_left.x) as u32 / dst.dims.w as u32;
+			let sy = SPRITE_SIZE * sprite_coords.1
+				+ SPRITE_SIZE * (coords.y - dst.top_left.y) as u32 / dst.dims.h as u32;
+			sheet.get_pixel(sx, sy).0
+		};
+		if px[3] == 0x00 {
+			continue;
+		}
+		let pixel_index = coords.y * frame_buffer_dims.w as i32 + coords.x;
+		let pixel_byte_index = pixel_index as usize * 4;
+		let pixel_bytes = pixel_byte_index..(pixel_byte_index + 4);
+		if px[3] != 0xff {
+			let background = frame_buffer.frame_mut().get(pixel_bytes.clone()).unwrap();
+			let alpha = px[3] as f32 / 255.;
+			px[0] = opacity!(px, background, alpha, 0);
+			px[1] = opacity!(px, background, alpha, 1);
+			px[2] = opacity!(px, background, alpha, 2);
+			px[3] = 0xff;
+		}
+		frame_buffer.frame_mut()[pixel_bytes].copy_from_slice(&px);
 	}
 }
 
@@ -447,6 +502,10 @@ fn main() -> Result<(), Error> {
 
 	let font_file = include_bytes!("../assets/font.png");
 	let font_sheet = image::load_from_memory_with_format(font_file, ImageFormat::Png)
+		.expect("Failed to load font file");
+
+	let sheet_file = include_bytes!("../assets/spritesheet.png");
+	let spritesheet = image::load_from_memory_with_format(sheet_file, ImageFormat::Png)
 		.expect("Failed to load font file");
 
 	let mut t = Instant::now();
@@ -677,33 +736,31 @@ fn main() -> Result<(), Error> {
 				.for_each(|pixel| pixel.copy_from_slice(&BG_COLOR));
 
 			// Player
-			let player_color = if player.hp_cd.is_over() {
-				[0x00, 0x00, 0xff, 0xff]
-			} else {
-				[0x00, 0x00, 0xff, 0x50]
-			};
-			draw_rect(
-				&mut frame_buffer,
-				frame_buffer_dims,
-				Rect::from_float(player.pos, player.size),
-				player_color,
-			);
 
-			// Player hitbox
-			draw_rect(
+			draw_sprite(
 				&mut frame_buffer,
 				frame_buffer_dims,
+				&spritesheet,
+				player.sprite_coords(),
+				Rect::from_float(player.pos, player.size),
+			);
+			// Player hitbox
+			draw_sprite(
+				&mut frame_buffer,
+				frame_buffer_dims,
+				&spritesheet,
+				player.sprite_coords_hit(),
 				Rect::from_float(player.pos, player.size_hit),
-				[0xff, 0x00, 0x00, 0xff],
 			);
 
 			// Enemies
 			for enemy in world.enemies.iter() {
-				draw_rect(
+				draw_sprite(
 					&mut frame_buffer,
 					frame_buffer_dims,
+					&spritesheet,
+					enemy.sprite_coords(),
 					Rect::from_float(enemy.pos, enemy.size),
-					enemy.color_from_variant(),
 				);
 				draw_rect(
 					&mut frame_buffer,
@@ -725,12 +782,13 @@ fn main() -> Result<(), Error> {
 
 			//projectiles
 			for proj in world.projectiles.iter() {
-				draw_rect(
+				draw_sprite(
 					&mut frame_buffer,
 					frame_buffer_dims,
+					&spritesheet,
+					proj.sprite_coords(),
 					Rect::from_float(proj.pos, Dimensions { w: 10., h: 10. }),
-					proj.color_from_variant(),
-				)
+				);
 			}
 
 			// Interface
@@ -755,13 +813,17 @@ fn main() -> Result<(), Error> {
 				)
 			}
 
+			let s = "LEVEL 1";
 			draw_text(
 				&mut frame_buffer,
 				frame_buffer_dims,
 				&font_sheet,
-				Rect { top_left: (1040, 128).into(), dims: (4 * 4 * 5, 6 * 5 * 2).into() },
+				Rect {
+					top_left: (1040, 128).into(),
+					dims: (4 * s.len() as i32 * 5, 6 * 5 * 2).into(),
+				},
 				[0xff, 0x00, 0x00, 0xff],
-				"TEST",
+				s,
 			);
 
 			// Limit fps refresh for it to be readable
