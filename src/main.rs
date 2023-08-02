@@ -4,6 +4,7 @@ use cgmath::{InnerSpace, Point2, Vector2, Zero};
 use image::{DynamicImage, GenericImageView, ImageFormat};
 use pixels::{Error, SurfaceTexture};
 use std::time::{Duration, Instant};
+use std::{fs, vec};
 use winit::dpi::PhysicalSize;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
@@ -104,7 +105,7 @@ enum EnemyType {
 
 struct Enemy {
 	pos: Point2<f32>,
-	_vel: Vector2<f32>,
+	vel: Vector2<f32>,
 	size: Dimensions<f32>,
 	hp: f32,
 	proj_cd: Cooldown,
@@ -115,7 +116,7 @@ impl Enemy {
 	fn _new(variant: EnemyType) -> Self {
 		Self {
 			pos: (150., 40.).into(),
-			_vel: Vector2::zero(),
+			vel: Vector2::zero(),
 			size: Dimensions { w: 48., h: 48. },
 			hp: 400.,
 			proj_cd: Cooldown::with_duration(Duration::from_secs_f32(10. * DT_60)),
@@ -139,7 +140,7 @@ impl Enemy {
 				proj_cd = Cooldown::new(30. * DT_60);
 			},
 		};
-		Self { pos, _vel: Vector2::zero(), size, hp, proj_cd, variant }
+		Self { pos, vel: Vector2::zero(), size, hp, proj_cd, variant }
 	}
 
 	fn hp_max_from_variant(&self) -> f32 {
@@ -179,18 +180,44 @@ impl Projectile {
 	}
 }
 
+struct GlobalInfo {
+	begin: Instant,
+	time: Duration,
+	frame_count: u64,
+}
+
+impl GlobalInfo {
+	fn init() -> GlobalInfo {
+		GlobalInfo {
+			begin: Instant::now(),
+			time: Duration::from_secs(0),
+			frame_count: 0,
+		}
+	}
+}
+
+enum EventType {
+	SpawnEnemy(Duration, Point2<f32>, EnemyType),
+	_SpawnBoss(Duration, Point2<f32>),
+}
+struct Event {
+	time: Instant,
+	variant: EventType,
+}
+
 struct World {
 	player: Player,
 	projectiles: Vec<Projectile>,
 	enemies: Vec<Enemy>,
-	_dims: Dimensions<i32>,
-	dims_f: Dimensions<f32>,
+	dims: Dimensions<f32>,
 	fps_cd: Cooldown,
+	infos: GlobalInfo,
+	event_list: Vec<Event>,
 }
 
 impl World {
 	/// Create a new `World` instance that can draw a moving box.
-	fn start(dims: Dimensions<i32>) -> Self {
+	fn start(dims: Dimensions<f32>) -> Self {
 		Self {
 			player: Player::new(),
 			projectiles: Vec::new(),
@@ -199,9 +226,10 @@ impl World {
 				Enemy::spawn((300., 100.).into(), EnemyType::Basic),
 				Enemy::spawn((500., 150.).into(), EnemyType::Sniper),
 			],
-			_dims: dims,
-			dims_f: Dimensions { w: dims.w as f32, h: dims.h as f32 },
+			dims,
 			fps_cd: Cooldown::with_duration(Duration::from_millis(100)),
+			infos: GlobalInfo::init(),
+			event_list: vec![],
 		}
 	}
 }
@@ -321,9 +349,44 @@ fn draw_text(
 	}
 }
 
+fn load_level(level_file: &str, dimensions: Dimensions<f32>) -> std::io::Result<World> {
+	let level_raw_data = fs::read_to_string(level_file)?;
+
+	let mut world = World::start(Dimensions { w: 0.8 * dimensions.w, h: dimensions.h });
+
+	let events = level_raw_data
+		.split('\n')
+		.filter_map(|x| x.strip_prefix('@'));
+
+	for event in events {
+		let mut event = event.split_whitespace();
+		match event.next().unwrap() {
+			"spawn-enemy" => {
+				let variant = match event.next().unwrap() {
+					"basic" => EnemyType::Basic,
+					"sniper" => EnemyType::Sniper,
+					other => unimplemented!("Enemy type {other} doesn't exist"),
+				};
+				let t: f32 = event.next().unwrap().parse().unwrap();
+				let t = Duration::from_secs_f32(t);
+				let x: f32 = event.next().unwrap().parse().unwrap();
+				let y: f32 = event.next().unwrap().parse().unwrap();
+				let event = EventType::SpawnEnemy(t, (x, y).into(), variant);
+
+				world
+					.event_list
+					.push(Event { time: world.infos.begin + t, variant: event });
+			},
+			evt => unimplemented!("Unknown event {evt}"),
+		}
+	}
+	Ok(world)
+}
+
 fn main() -> Result<(), Error> {
 	const WIN_W: u32 = 1280;
 	const WIN_H: u32 = 720;
+
 	env_logger::init();
 	let event_loop = EventLoop::new();
 	let window = {
@@ -344,8 +407,8 @@ fn main() -> Result<(), Error> {
 		screen_size.height / 2 - window_outer_size.height / 2,
 	));
 
-	let bg_color = [0x08, 0x0b, 0x1e, 0xff];
-	let bg_color_ui = [0x20, 0x11, 0x38, 0xff];
+	const BG_COLOR: [u8; 4] = [0x08, 0x0b, 0x1e, 0xff];
+	const BG_COLOR_UI: [u8; 4] = [0x20, 0x11, 0x38, 0xff];
 	let bg_color_wgpu = {
 		fn conv_srgb_to_linear(x: f64) -> f64 {
 			// See https://github.com/gfx-rs/wgpu/issues/2326
@@ -360,10 +423,10 @@ fn main() -> Result<(), Error> {
 			}
 		}
 		pixels::wgpu::Color {
-			r: conv_srgb_to_linear(bg_color_ui[0] as f64 / 255.0),
-			g: conv_srgb_to_linear(bg_color_ui[1] as f64 / 255.0),
-			b: conv_srgb_to_linear(bg_color_ui[2] as f64 / 255.0),
-			a: conv_srgb_to_linear(bg_color_ui[3] as f64 / 255.0),
+			r: conv_srgb_to_linear(BG_COLOR_UI[0] as f64 / 255.0),
+			g: conv_srgb_to_linear(BG_COLOR_UI[1] as f64 / 255.0),
+			b: conv_srgb_to_linear(BG_COLOR_UI[2] as f64 / 255.0),
+			a: conv_srgb_to_linear(BG_COLOR_UI[3] as f64 / 255.0),
 		}
 	};
 
@@ -376,10 +439,11 @@ fn main() -> Result<(), Error> {
 			.build()
 			.unwrap()
 	};
-	let mut world = World::start(Dimensions {
-		w: (0.8 * frame_buffer_dims.w as f32) as i32,
-		h: frame_buffer_dims.h as i32,
-	});
+	let mut world = load_level(
+		"./levels/level1.hbh",
+		Dimensions { w: frame_buffer_dims.w as f32, h: frame_buffer_dims.h as f32 },
+	)
+	.unwrap();
 
 	let font_file = include_bytes!("../assets/font.png");
 	let font_sheet = image::load_from_memory_with_format(font_file, ImageFormat::Png)
@@ -427,9 +491,24 @@ fn main() -> Result<(), Error> {
 			_ => {},
 		},
 		Event::MainEventsCleared => {
+			// Applying events
+			let mut to_remove = vec![];
+			for (i, e) in world.event_list.iter().enumerate() {
+				if e.time >= Instant::now() {
+					if let EventType::SpawnEnemy(_, pos, variant) = e.variant {
+						world.enemies.push(Enemy::spawn(pos, variant));
+					}
+					to_remove.push(i);
+				}
+			}
+			for i in to_remove.into_iter().rev() {
+				world.event_list.remove(i);
+			}
+			////
 			// Main physics calculations
+			// Player
 			let player = &mut world.player;
-			// Movement
+			// Inputs
 			player.vel = Vector2::zero();
 			let inputs = &player.inputs;
 			if inputs.left {
@@ -449,13 +528,14 @@ fn main() -> Result<(), Error> {
 			if player.vel != Vector2::zero() {
 				let new_pos = player.pos + 5. * player.vel;
 				// Separate x and y checks to allow orthogonal movement while on the edge
-				if 0. <= new_pos.x && new_pos.x <= world.dims_f.w {
+				if 0. <= new_pos.x && new_pos.x <= world.dims.w {
 					player.pos.x = new_pos.x;
 				}
-				if 0. <= new_pos.y && new_pos.y <= world.dims_f.h {
+				if 0. <= new_pos.y && new_pos.y <= world.dims.h {
 					player.pos.y = new_pos.y;
 				}
 			}
+			// Player shoot
 			if inputs.shoot & player.proj_cd.is_over() {
 				let proj = Projectile {
 					pos: player.pos - player.size.h / 2. * Vector2::unit_y(),
@@ -465,8 +545,39 @@ fn main() -> Result<(), Error> {
 				world.projectiles.push(proj);
 				player.proj_cd.last_emit = Some(Instant::now());
 			}
+
+			// Enemies physics
 			for enemy in world.enemies.iter_mut() {
-				if enemy.proj_cd.is_over() {
+				// Enemies behavior
+				const SPEED: f32 = 0.5;
+				match enemy.variant {
+					EnemyType::Basic => {
+						enemy.vel = Vector2::zero();
+						if enemy.pos.y <= 150. {
+							enemy.vel = Vector2::unit_y() * SPEED;
+						} else if enemy.pos.x <= 750. {
+							enemy.vel = Vector2::unit_x() * SPEED;
+						}
+					},
+					EnemyType::Sniper => {
+						enemy.vel = Vector2::zero();
+						if enemy.pos.y <= 200. {
+							enemy.vel = Vector2::unit_y() * SPEED;
+						} else if enemy.pos.x <= 600. {
+							enemy.vel = Vector2::unit_x() * SPEED
+						}
+						if enemy.pos.x >= 600. && enemy.pos.y >= 100. {
+							enemy.vel = -Vector2::unit_y() * SPEED;
+						}
+					},
+				}
+				// Update pos
+				if enemy.vel != Vector2::zero() {
+					enemy.pos += enemy.vel;
+				}
+
+				// Shooting
+				if enemy.proj_cd.is_over() && enemy.pos.x >= 0. && enemy.pos.y >= 0. {
 					let proj = {
 						let pos = enemy.pos + enemy.size.h * 0.6 * Vector2::unit_y();
 						match enemy.variant {
@@ -488,6 +599,7 @@ fn main() -> Result<(), Error> {
 				}
 			}
 
+			/// Collider helper function
 			fn collide_rectangle(
 				pos_a: Point2<f32>,
 				pos_b: Point2<f32>,
@@ -503,13 +615,15 @@ fn main() -> Result<(), Error> {
 						|| (pos_a.y - size_a.h / 2. <= pos_b.y + size_b.h / 2.
 							&& pos_b.y + size_b.h / 2. <= pos_a.y + size_a.h / 2.))
 			}
+
+			// Projectiles physics
 			let mut to_remove: Vec<usize> = vec![];
 			for (i, proj) in world.projectiles.iter_mut().enumerate() {
 				proj.pos += proj.vel;
 				if proj.pos.x < 0.
-					|| proj.pos.x >= world.dims_f.w
+					|| proj.pos.x >= world.dims.w
 					|| proj.pos.y < 0.
-					|| proj.pos.y >= world.dims_f.h
+					|| proj.pos.y >= world.dims.h
 				{
 					to_remove.push(i);
 				} else {
@@ -519,7 +633,8 @@ fn main() -> Result<(), Error> {
 							proj.pos,
 							enemy.size,
 							Dimensions { w: 10., h: 10. },
-						) {
+						) & matches!(proj.variant, ProjType::PlayerShoot)
+						{
 							enemy.hp -= 2.;
 							to_remove.push(i);
 							if enemy.hp <= 0. {
@@ -534,7 +649,8 @@ fn main() -> Result<(), Error> {
 							proj.pos,
 							player.size_hit,
 							Dimensions { w: 10., h: 10. },
-						) {
+						) & !matches!(proj.variant, ProjType::PlayerShoot)
+					{
 						player.hp -= 1;
 						to_remove.push(i);
 						if player.hp == 0 {
@@ -558,7 +674,7 @@ fn main() -> Result<(), Error> {
 			frame_buffer
 				.frame_mut()
 				.chunks_exact_mut(4)
-				.for_each(|pixel| pixel.copy_from_slice(&bg_color));
+				.for_each(|pixel| pixel.copy_from_slice(&BG_COLOR));
 
 			// Player
 			let player_color = if player.hp_cd.is_over() {
@@ -624,7 +740,7 @@ fn main() -> Result<(), Error> {
 				.enumerate()
 				.for_each(|(i, pixel)| {
 					if i % WIN_W as usize > (0.8 * WIN_W as f32) as usize {
-						pixel.copy_from_slice(&bg_color_ui)
+						pixel.copy_from_slice(&BG_COLOR_UI)
 					}
 				});
 			for i in 0..player.hp {
@@ -664,6 +780,8 @@ fn main() -> Result<(), Error> {
 				[0xff, 0xff, 0xff, 0xb0],
 				&fps,
 			);
+			world.infos.time = Instant::elapsed(&world.infos.begin);
+			world.infos.frame_count += 1;
 			window.request_redraw();
 		},
 		Event::RedrawRequested(_) => {

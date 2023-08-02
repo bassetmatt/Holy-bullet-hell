@@ -1,0 +1,8 @@
+# Events
+// <type>    <var>  <t> <x> <y>
+@spawn-enemy basic  0.  100 -50
+@spawn-enemy basic  1  50  -25
+@spawn-enemy sniper 2  150 -25
+
+# Player
+$lives 5
