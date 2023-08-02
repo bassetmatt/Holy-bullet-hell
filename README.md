@@ -4,7 +4,7 @@
 Rust.
 ## Compile and run
 ```bash
-cargo run
+cargo run --release
 ```
 
 ## Gameplay
