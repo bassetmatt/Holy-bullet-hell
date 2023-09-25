@@ -74,16 +74,15 @@ impl Player {
 		}
 	}
 
-	fn sprite_coords(&self) -> (u32, u32) {
-		if self.hp_cd.is_over() {
-			(1, 0)
-		} else {
-			(1, 1)
+	fn sprite_coords(&self) -> SpriteCoords {
+		SpriteCoords {
+			sheet_pos: if self.hp_cd.is_over() { (1, 0) } else { (1, 1) }.into(),
+			dims: (8, 8).into(),
 		}
 	}
 
-	fn sprite_coords_hit(&self) -> (u32, u32) {
-		(0, 0)
+	fn sprite_coords_hit(&self) -> SpriteCoords {
+		SpriteCoords { sheet_pos: (0, 0).into(), dims: (8, 8).into() }
 	}
 }
 
@@ -162,10 +161,14 @@ impl Enemy {
 		}
 	}
 
-	fn sprite_coords(&self) -> (u32, u32) {
-		match self.variant {
-			EnemyType::Basic => (2, 0),
-			EnemyType::Sniper => (3, 0),
+	fn sprite_coords(&self) -> SpriteCoords {
+		SpriteCoords {
+			sheet_pos: match self.variant {
+				EnemyType::Basic => (2, 0),
+				EnemyType::Sniper => (3, 0),
+			}
+			.into(),
+			dims: (8, 8).into(),
 		}
 	}
 }
@@ -183,11 +186,15 @@ struct Projectile {
 }
 
 impl Projectile {
-	fn sprite_coords(&self) -> (u32, u32) {
-		match self.variant {
-			ProjType::Basic => (2, 1),
-			ProjType::Aimed => (3, 1),
-			ProjType::PlayerShoot => (0, 1),
+	fn sprite_coords(&self) -> SpriteCoords {
+		SpriteCoords {
+			sheet_pos: match self.variant {
+				ProjType::Basic => (2, 1),
+				ProjType::Aimed => (3, 1),
+				ProjType::PlayerShoot => (0, 1),
+			}
+			.into(),
+			dims: (8, 8).into(),
 		}
 	}
 }
@@ -300,8 +307,13 @@ fn char_position(c: char) -> Option<(u32, u32)> {
 		ch if sixth_line.contains(ch) => {
 			Some((sixth_line.chars().position(|c| c == ch).unwrap() as u32, 5))
 		},
-		_ => unimplemented!(),
+		_ => unimplemented!("Character {c} doesn't exist in font"),
 	}
+}
+
+struct SpriteCoords {
+	sheet_pos: Point2<u32>,
+	dims: Dimensions<u32>,
 }
 
 fn draw_text(
@@ -309,7 +321,7 @@ fn draw_text(
 	frame_buffer_dims: Dimensions<u32>,
 	font_sheet: &DynamicImage,
 	dst: Rect,
-	mut color: [u8; 4],
+	color: [u8; 4],
 	text: &str,
 ) {
 	if color[3] == 0x00 {
@@ -324,42 +336,16 @@ fn draw_text(
 		if c == ' ' {
 			continue;
 		}
-		let char_sheet_coords: Point2<u32> = char_position(c).unwrap().into();
 		let top_left = dst.top_left + Vector2::new(i as i32 * char_dims.w, 0);
 		let dst_c = Rect { top_left, dims: char_dims };
-		let window = Rect {
-			top_left: (0, 0).into(),
-			dims: Dimensions { w: frame_buffer_dims.w as i32, h: frame_buffer_dims.h as i32 },
-		};
-		for coords in dst_c.iter() {
-			if !window.contains(coords) {
-				continue;
-			}
-
-			let is_visible = {
-				let sx =
-					4 * char_sheet_coords.x + 4 * (coords.x - top_left.x) as u32 / char_dims.w as u32;
-				let sy =
-					6 * char_sheet_coords.y + 6 * (coords.y - top_left.y) as u32 / char_dims.h as u32;
-				let px = font_sheet.get_pixel(sx, sy).0;
-				px[3] != 0x00
-			};
-			if !is_visible {
-				continue;
-			}
-			let pixel_index = coords.y * frame_buffer_dims.w as i32 + coords.x;
-			let pixel_byte_index = pixel_index as usize * 4;
-			let pixel_bytes = pixel_byte_index..(pixel_byte_index + 4);
-			if color[3] != 0xff {
-				let old_color = frame_buffer.frame_mut().get(pixel_bytes.clone()).unwrap();
-				let alpha = color[3] as f32 / 255.;
-				color[0] = opacity!(color, old_color, alpha, 0);
-				color[1] = opacity!(color, old_color, alpha, 1);
-				color[2] = opacity!(color, old_color, alpha, 2);
-				color[3] = 0xff;
-			}
-			frame_buffer.frame_mut()[pixel_bytes].copy_from_slice(&color);
-		}
+		draw_sprite(
+			frame_buffer,
+			frame_buffer_dims,
+			font_sheet,
+			SpriteCoords { sheet_pos: char_position(c).unwrap().into(), dims: (4, 6).into() },
+			dst_c,
+			Some(color),
+		);
 	}
 }
 
@@ -367,23 +353,23 @@ fn draw_sprite(
 	frame_buffer: &mut pixels::Pixels,
 	frame_buffer_dims: Dimensions<u32>,
 	sheet: &DynamicImage,
-	sprite_coords: (u32, u32),
+	SpriteCoords { sheet_pos, dims }: SpriteCoords,
 	dst: Rect,
+	color: Option<[u8; 4]>,
 ) {
 	let window = Rect {
 		top_left: (0, 0).into(),
-		dims: Dimensions { w: frame_buffer_dims.w as i32, h: frame_buffer_dims.h as i32 },
+		dims: frame_buffer_dims.into_dim::<i32>(),
 	};
 	for coords in dst.iter() {
 		if !window.contains(coords) {
 			continue;
 		}
 		let mut px = {
-			const SPRITE_SIZE: u32 = 8;
-			let sx = SPRITE_SIZE * sprite_coords.0
-				+ SPRITE_SIZE * (coords.x - dst.top_left.x) as u32 / dst.dims.w as u32;
-			let sy = SPRITE_SIZE * sprite_coords.1
-				+ SPRITE_SIZE * (coords.y - dst.top_left.y) as u32 / dst.dims.h as u32;
+			let sx =
+				dims.w * sheet_pos.x + dims.w * (coords.x - dst.top_left.x) as u32 / dst.dims.w as u32;
+			let sy =
+				dims.h * sheet_pos.y + dims.h * (coords.y - dst.top_left.y) as u32 / dst.dims.h as u32;
 			sheet.get_pixel(sx, sy).0
 		};
 		if px[3] == 0x00 {
@@ -392,6 +378,10 @@ fn draw_sprite(
 		let pixel_index = coords.y * frame_buffer_dims.w as i32 + coords.x;
 		let pixel_byte_index = pixel_index as usize * 4;
 		let pixel_bytes = pixel_byte_index..(pixel_byte_index + 4);
+		px = match color {
+			None => px,
+			Some(col) => col,
+		};
 		if px[3] != 0xff {
 			let background = frame_buffer.frame_mut().get(pixel_bytes.clone()).unwrap();
 			let alpha = px[3] as f32 / 255.;
@@ -743,6 +733,7 @@ fn main() -> Result<(), Error> {
 				&spritesheet,
 				player.sprite_coords(),
 				Rect::from_float(player.pos, player.size),
+				None,
 			);
 			// Player hitbox
 			draw_sprite(
@@ -751,6 +742,7 @@ fn main() -> Result<(), Error> {
 				&spritesheet,
 				player.sprite_coords_hit(),
 				Rect::from_float(player.pos, player.size_hit),
+				None,
 			);
 
 			// Enemies
@@ -761,6 +753,7 @@ fn main() -> Result<(), Error> {
 					&spritesheet,
 					enemy.sprite_coords(),
 					Rect::from_float(enemy.pos, enemy.size),
+					None,
 				);
 				draw_rect(
 					&mut frame_buffer,
@@ -788,6 +781,7 @@ fn main() -> Result<(), Error> {
 					&spritesheet,
 					proj.sprite_coords(),
 					Rect::from_float(proj.pos, Dimensions { w: 10., h: 10. }),
+					None,
 				);
 			}
 

@@ -1,6 +1,11 @@
 use cgmath::Point2;
 use winit::dpi::PhysicalSize;
 
+use std::{
+	convert::{From, Into},
+	fmt::Debug,
+};
+
 #[derive(Clone, Copy, Debug)]
 pub struct Dimensions<T: Copy> {
 	pub w: T,
@@ -10,6 +15,18 @@ pub struct Dimensions<T: Copy> {
 impl<T: Copy> From<(T, T)> for Dimensions<T> {
 	fn from((w, h): (T, T)) -> Dimensions<T> {
 		Dimensions { w, h }
+	}
+}
+
+impl<T: Copy> Dimensions<T> {
+	pub fn into_dim<V>(self) -> Dimensions<V>
+	where
+		V: TryFrom<T> + Debug + Copy,
+	{
+		match (self.w.try_into(), self.h.try_into()) {
+			(Ok(w), Ok(h)) => Dimensions { w, h },
+			_ => panic!("Error"),
+		}
 	}
 }
 
