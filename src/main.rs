@@ -14,9 +14,9 @@ use crate::coords::*;
 const DT_60: f32 = 1. / 60.;
 // const DT_144: f32 = 1. / 144.;
 
-impl Rect {
-	fn life_bar_full(pos: Point2<f32>, dims: Dimensions<f32>) -> Rect {
-		Rect {
+impl RectI {
+	fn life_bar_full(pos: Point2<f32>, dims: Dimensions<f32>) -> RectI {
+		RectI {
 			top_left: Point2 {
 				x: (pos.x - dims.w / 2.).round() as i32,
 				y: (pos.y - dims.h / 2.).round() as i32 - 8,
@@ -24,8 +24,8 @@ impl Rect {
 			dims: Dimensions { w: dims.w.round() as i32, h: 8 },
 		}
 	}
-	fn life_bar(pos: Point2<f32>, dims: Dimensions<f32>, hp_ratio: f32) -> Rect {
-		Rect {
+	fn life_bar(pos: Point2<f32>, dims: Dimensions<f32>, hp_ratio: f32) -> RectI {
+		RectI {
 			top_left: Point2 {
 				x: (pos.x - dims.w / 2.).round() as i32,
 				y: (pos.y - dims.h / 2.).round() as i32 - 8,
@@ -34,25 +34,32 @@ impl Rect {
 		}
 	}
 }
-#[derive(Default)]
-struct Inputs {
-	left: bool,
-	right: bool,
-	up: bool,
-	down: bool,
-	shoot: bool,
+
+struct Cooldown {
+	last_emit: Option<Instant>,
+	cooldown: Duration,
 }
 
-impl Inputs {
-	fn new() -> Inputs {
-		Inputs { ..Default::default() }
+impl Cooldown {
+	/// Creates cooldown with secs second duration
+	fn with_secs(secs: f32) -> Self {
+		Cooldown { last_emit: None, cooldown: Duration::from_secs_f32(secs) }
+	}
+	fn with_duration(value: Duration) -> Self {
+		Cooldown { last_emit: None, cooldown: value }
+	}
+
+	fn is_over(&self) -> bool {
+		if let Some(last) = self.last_emit {
+			return Instant::elapsed(&last) >= self.cooldown;
+		}
+		true
 	}
 }
 
 struct Player {
 	pos: Point2<f32>,
 	vel: Vector2<f32>,
-	inputs: Inputs,
 	size: Dimensions<f32>,
 	size_hit: Dimensions<f32>,
 	hp: u32,
@@ -65,12 +72,11 @@ impl Player {
 		Self {
 			pos: (75., 200.).into(),
 			vel: (0., 0.).into(),
-			inputs: Inputs::new(),
 			size: Dimensions { w: 48., h: 48. },
 			size_hit: Dimensions { w: 10., h: 10. },
 			hp: 5,
-			hp_cd: Cooldown::with_duration(Duration::from_secs_f32(2.)),
-			proj_cd: Cooldown::with_duration(Duration::from_secs_f32(5. * DT_60)),
+			hp_cd: Cooldown::with_secs(2.),
+			proj_cd: Cooldown::with_secs(5. * DT_60),
 		}
 	}
 
@@ -86,32 +92,16 @@ impl Player {
 	}
 }
 
-struct Cooldown {
-	last_emit: Option<Instant>,
-	cooldown: Duration,
-}
-
-impl Cooldown {
-	/// Creates cooldown with secs second duration
-	fn new(secs: f32) -> Self {
-		Cooldown { last_emit: None, cooldown: Duration::from_secs_f32(secs) }
-	}
-	fn with_duration(value: Duration) -> Self {
-		Cooldown { last_emit: None, cooldown: value }
-	}
-
-	fn is_over(&self) -> bool {
-		if let Some(last) = self.last_emit {
-			return Instant::elapsed(&last) >= self.cooldown;
-		}
-		true
-	}
-}
-
 #[derive(Clone, Copy)]
 enum EnemyType {
 	Basic,
 	Sniper,
+}
+
+enum EnemyState {
+	NotSpawned,
+	_OnScreen(fn(&mut Enemy)),
+	_OffScreen,
 }
 
 struct Enemy {
@@ -121,6 +111,7 @@ struct Enemy {
 	hp: f32,
 	proj_cd: Cooldown,
 	variant: EnemyType,
+	_state: EnemyState,
 }
 
 impl Enemy {
@@ -130,8 +121,9 @@ impl Enemy {
 			vel: Vector2::zero(),
 			size: Dimensions { w: 48., h: 48. },
 			hp: 400.,
-			proj_cd: Cooldown::with_duration(Duration::from_secs_f32(10. * DT_60)),
+			proj_cd: Cooldown::with_secs(10. * DT_60),
 			variant,
+			_state: EnemyState::NotSpawned,
 		}
 	}
 
@@ -143,15 +135,23 @@ impl Enemy {
 			EnemyType::Basic => {
 				hp = 100.;
 				size = (48., 48.).into();
-				proj_cd = Cooldown::new(10. * DT_60);
+				proj_cd = Cooldown::with_secs(10. * DT_60);
 			},
 			EnemyType::Sniper => {
 				hp = 50.;
 				size = (32., 48.).into();
-				proj_cd = Cooldown::new(30. * DT_60);
+				proj_cd = Cooldown::with_secs(30. * DT_60);
 			},
 		};
-		Self { pos, vel: Vector2::zero(), size, hp, proj_cd, variant }
+		Self {
+			pos,
+			vel: Vector2::zero(),
+			size,
+			hp,
+			proj_cd,
+			variant,
+			_state: EnemyState::NotSpawned,
+		}
 	}
 
 	fn hp_max_from_variant(&self) -> f32 {
@@ -206,7 +206,7 @@ struct GlobalInfo {
 }
 
 impl GlobalInfo {
-	fn init() -> GlobalInfo {
+	fn new() -> GlobalInfo {
 		GlobalInfo {
 			begin: Instant::now(),
 			time: Duration::from_secs(0),
@@ -224,30 +224,44 @@ struct Event {
 	variant: EventType,
 }
 
-struct World {
+#[derive(Default)]
+struct Inputs {
+	left: bool,
+	right: bool,
+	up: bool,
+	down: bool,
+	shoot: bool,
+	_pause: bool,
+}
+
+impl Inputs {
+	fn new() -> Inputs {
+		Inputs { ..Default::default() }
+	}
+}
+
+struct Game {
 	player: Player,
 	projectiles: Vec<Projectile>,
 	enemies: Vec<Enemy>,
 	dims: Dimensions<f32>,
+	inputs: Inputs,
 	fps_cd: Cooldown,
 	infos: GlobalInfo,
 	event_list: Vec<Event>,
 }
 
-impl World {
+impl Game {
 	/// Create a new `World` instance that can draw a moving box.
 	fn start(dims: Dimensions<f32>) -> Self {
 		Self {
 			player: Player::new(),
 			projectiles: Vec::new(),
-			enemies: vec![
-				Enemy::spawn((200., 100.).into(), EnemyType::Basic),
-				Enemy::spawn((300., 100.).into(), EnemyType::Basic),
-				Enemy::spawn((500., 150.).into(), EnemyType::Sniper),
-			],
+			enemies: vec![],
 			dims,
+			inputs: Inputs::new(),
 			fps_cd: Cooldown::with_duration(Duration::from_millis(100)),
-			infos: GlobalInfo::init(),
+			infos: GlobalInfo::new(),
 			event_list: vec![],
 		}
 	}
@@ -262,13 +276,10 @@ macro_rules! opacity {
 fn draw_rect(
 	pixel_buffer: &mut pixels::Pixels,
 	pixel_buffer_dims: Dimensions<u32>,
-	dst: Rect,
+	dst: RectI,
 	mut color: [u8; 4],
 ) {
-	let window = Rect {
-		top_left: (0, 0).into(),
-		dims: Dimensions { w: pixel_buffer_dims.w as i32, h: pixel_buffer_dims.h as i32 },
-	};
+	let window = pixel_buffer_dims.into_rect();
 	for coords in dst.iter() {
 		if window.contains(coords) {
 			let pixel_index = coords.y * pixel_buffer_dims.w as i32 + coords.x;
@@ -320,7 +331,7 @@ fn draw_text(
 	frame_buffer: &mut pixels::Pixels,
 	frame_buffer_dims: Dimensions<u32>,
 	font_sheet: &DynamicImage,
-	dst: Rect,
+	dst: RectI,
 	color: [u8; 4],
 	text: &str,
 ) {
@@ -354,7 +365,7 @@ fn draw_sprite(
 	frame_buffer_dims: Dimensions<u32>,
 	sheet: &DynamicImage,
 	SpriteCoords { sheet_pos, dims }: SpriteCoords,
-	dst: Rect,
+	dst: RectI,
 	color: Option<[u8; 4]>,
 ) {
 	let window = Rect {
@@ -394,10 +405,10 @@ fn draw_sprite(
 	}
 }
 
-fn load_level(level_file: &str, dimensions: Dimensions<f32>) -> std::io::Result<World> {
+fn load_level(level_file: &str, dimensions: Dimensions<f32>) -> std::io::Result<Game> {
 	let level_raw_data = fs::read_to_string(level_file)?;
 
-	let mut world = World::start(Dimensions { w: 0.8 * dimensions.w, h: dimensions.h });
+	let mut world = Game::start(Dimensions { w: 0.8 * dimensions.w, h: dimensions.h });
 
 	let events = level_raw_data
 		.split('\n')
@@ -524,17 +535,11 @@ fn main() -> Result<(), Error> {
 				input: KeyboardInput { state, virtual_keycode: Some(key), .. },
 				..
 			} => match key {
-				VirtualKeyCode::Up => world.player.inputs.up = matches!(state, ElementState::Pressed),
-				VirtualKeyCode::Down => {
-					world.player.inputs.down = matches!(state, ElementState::Pressed)
-				},
-				VirtualKeyCode::Left => {
-					world.player.inputs.left = matches!(state, ElementState::Pressed)
-				},
-				VirtualKeyCode::Right => {
-					world.player.inputs.right = matches!(state, ElementState::Pressed)
-				},
-				VirtualKeyCode::X => world.player.inputs.shoot = matches!(state, ElementState::Pressed),
+				VirtualKeyCode::Up => world.inputs.up = matches!(state, ElementState::Pressed),
+				VirtualKeyCode::Down => world.inputs.down = matches!(state, ElementState::Pressed),
+				VirtualKeyCode::Left => world.inputs.left = matches!(state, ElementState::Pressed),
+				VirtualKeyCode::Right => world.inputs.right = matches!(state, ElementState::Pressed),
+				VirtualKeyCode::X => world.inputs.shoot = matches!(state, ElementState::Pressed),
 				_ => {},
 			},
 			_ => {},
@@ -559,7 +564,7 @@ fn main() -> Result<(), Error> {
 			let player = &mut world.player;
 			// Inputs
 			player.vel = Vector2::zero();
-			let inputs = &player.inputs;
+			let inputs = &world.inputs;
 			if inputs.left {
 				player.vel -= Vector2::unit_x();
 			}

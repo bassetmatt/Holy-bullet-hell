@@ -30,6 +30,12 @@ impl<T: Copy> Dimensions<T> {
 	}
 }
 
+impl Dimensions<u32> {
+	pub fn into_rect(self) -> RectI {
+		Rect { top_left: (0, 0).into(), dims: self.into_dim() }
+	}
+}
+
 macro_rules! dim_to_physical_size {
 	($type: ty) => {
 		impl From<PhysicalSize<u32>> for Dimensions<$type> {
@@ -44,33 +50,43 @@ dim_to_physical_size!(u32);
 dim_to_physical_size!(i32);
 
 #[derive(Clone, Copy)]
-pub struct Rect {
-	pub top_left: Point2<i32>,
-	pub dims: Dimensions<i32>,
+pub struct Rect<T: Copy> {
+	pub top_left: Point2<T>,
+	pub dims: Dimensions<T>,
 }
+#[allow(dead_code)]
+pub type RectF = Rect<f32>;
+pub type RectI = Rect<i32>;
+#[allow(dead_code)]
+pub type RectU = Rect<u32>;
 
-impl Rect {
-	fn top(self) -> i32 {
+impl<T> Rect<T>
+where
+	T: Copy + std::ops::Add<Output = T> + std::cmp::PartialOrd,
+{
+	fn top(self) -> T {
 		self.top_left.y
 	}
-	fn left(self) -> i32 {
+	fn left(self) -> T {
 		self.top_left.x
 	}
-	fn bottom_excluded(self) -> i32 {
+	fn bottom_excluded(self) -> T {
 		self.top_left.y + self.dims.h
 	}
-	fn right_excluded(self) -> i32 {
+	fn right_excluded(self) -> T {
 		self.top_left.x + self.dims.w
 	}
 
-	pub fn contains(self, coords: Point2<i32>) -> bool {
+	pub fn contains(self, coords: Point2<T>) -> bool {
 		self.left() <= coords.x
 			&& coords.x < self.right_excluded()
 			&& self.top() <= coords.y
 			&& coords.y < self.bottom_excluded()
 	}
+}
 
-	pub fn from_float(pos: Point2<f32>, dims: Dimensions<f32>) -> Rect {
+impl RectI {
+	pub fn from_float(pos: Point2<f32>, dims: Dimensions<f32>) -> RectI {
 		Rect {
 			top_left: Point2 {
 				x: (pos.x - dims.w / 2.).round() as i32,
@@ -79,7 +95,6 @@ impl Rect {
 			dims: Dimensions { w: dims.w.round() as i32, h: dims.h.round() as i32 },
 		}
 	}
-
 	pub fn iter(self) -> IterPointRect {
 		IterPointRect::with_rect(self)
 	}
@@ -92,11 +107,11 @@ impl Rect {
 
 pub struct IterPointRect {
 	current: Point2<i32>,
-	rect: Rect,
+	rect: RectI,
 }
 
 impl IterPointRect {
-	fn with_rect(rect: Rect) -> IterPointRect {
+	fn with_rect(rect: RectI) -> IterPointRect {
 		IterPointRect { current: rect.top_left, rect }
 	}
 }
