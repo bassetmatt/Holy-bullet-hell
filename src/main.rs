@@ -90,6 +90,35 @@ impl Player {
 	fn sprite_coords_hit(&self) -> SpriteCoords {
 		SpriteCoords { sheet_pos: (0, 0).into(), dims: (8, 8).into() }
 	}
+
+	fn update_pos(&mut self, inputs: &Inputs, bounds: RectF, dt: f32) {
+		// Inputs
+		self.vel = Vector2::zero();
+		if inputs.left {
+			self.vel -= Vector2::unit_x();
+		}
+		if inputs.right {
+			self.vel += Vector2::unit_x();
+		}
+		if inputs.up {
+			self.vel -= Vector2::unit_y();
+		}
+		if inputs.down {
+			self.vel += Vector2::unit_y();
+		}
+
+		// Update pos
+		if self.vel != Vector2::zero() {
+			let new_pos = self.pos + 5. * self.vel * dt / DT_60;
+			// Separate x and y checks to allow movement while on an edge
+			if 0. <= new_pos.x && new_pos.x <= bounds.dims.w {
+				self.pos.x = new_pos.x;
+			}
+			if 0. <= new_pos.y && new_pos.y <= bounds.dims.h {
+				self.pos.y = new_pos.y;
+			}
+		}
+	}
 }
 
 #[derive(Clone, Copy)]
@@ -171,6 +200,36 @@ impl Enemy {
 			dims: (8, 8).into(),
 		}
 	}
+
+	fn update_pos(&mut self, dt: f32) {
+		// Enemies behavior
+		const SPEED: f32 = 0.5;
+		match self.variant {
+			EnemyType::Basic => {
+				self.vel = Vector2::zero();
+				if self.pos.y <= 150. {
+					self.vel = Vector2::unit_y() * SPEED;
+				} else if self.pos.x <= 750. {
+					self.vel = Vector2::unit_x() * SPEED;
+				}
+			},
+			EnemyType::Sniper => {
+				self.vel = Vector2::zero();
+				if self.pos.y <= 200. {
+					self.vel = Vector2::unit_y() * SPEED;
+				} else if self.pos.x <= 600. {
+					self.vel = Vector2::unit_x() * SPEED
+				}
+				if self.pos.x >= 600. && self.pos.y >= 100. {
+					self.vel = -Vector2::unit_y() * SPEED;
+				}
+			},
+		}
+		// Update pos
+		if self.vel != Vector2::zero() {
+			self.pos += self.vel * dt / DT_60;
+		}
+	}
 }
 
 enum ProjType {
@@ -247,6 +306,7 @@ struct Game {
 	rect: RectF,
 	inputs: Inputs,
 	fps_cd: Cooldown,
+	fps: u32,
 	infos: GlobalInfo,
 	event_list: Vec<Event>,
 }
@@ -261,6 +321,7 @@ impl Game {
 			rect: dims.into_rect(),
 			inputs: Inputs::new(),
 			fps_cd: Cooldown::with_duration(Duration::from_millis(100)),
+			fps: 60,
 			infos: GlobalInfo::new(),
 			event_list: vec![],
 		}
@@ -562,33 +623,8 @@ fn main() -> Result<(), Error> {
 			// Main physics calculations
 			// Player
 			let player = &mut world.player;
-			// Inputs
-			player.vel = Vector2::zero();
 			let inputs = &world.inputs;
-			if inputs.left {
-				player.vel -= Vector2::unit_x();
-			}
-			if inputs.right {
-				player.vel += Vector2::unit_x();
-			}
-			if inputs.up {
-				player.vel -= Vector2::unit_y();
-			}
-			if inputs.down {
-				player.vel += Vector2::unit_y();
-			}
-
-			// Update pos
-			if player.vel != Vector2::zero() {
-				let new_pos = player.pos + 5. * player.vel;
-				// Separate x and y checks to allow movement while on an edge
-				if 0. <= new_pos.x && new_pos.x <= world.rect.dims.w {
-					player.pos.x = new_pos.x;
-				}
-				if 0. <= new_pos.y && new_pos.y <= world.rect.dims.h {
-					player.pos.y = new_pos.y;
-				}
-			}
+			player.update_pos(inputs, world.rect, dt.as_secs_f32());
 			// Player shoot
 			if inputs.shoot & player.proj_cd.is_over() {
 				let proj = Projectile {
@@ -602,34 +638,8 @@ fn main() -> Result<(), Error> {
 
 			// Enemies physics
 			for enemy in world.enemies.iter_mut() {
-				// Enemies behavior
-				const SPEED: f32 = 0.5;
-				match enemy.variant {
-					EnemyType::Basic => {
-						enemy.vel = Vector2::zero();
-						if enemy.pos.y <= 150. {
-							enemy.vel = Vector2::unit_y() * SPEED;
-						} else if enemy.pos.x <= 750. {
-							enemy.vel = Vector2::unit_x() * SPEED;
-						}
-					},
-					EnemyType::Sniper => {
-						enemy.vel = Vector2::zero();
-						if enemy.pos.y <= 200. {
-							enemy.vel = Vector2::unit_y() * SPEED;
-						} else if enemy.pos.x <= 600. {
-							enemy.vel = Vector2::unit_x() * SPEED
-						}
-						if enemy.pos.x >= 600. && enemy.pos.y >= 100. {
-							enemy.vel = -Vector2::unit_y() * SPEED;
-						}
-					},
-				}
-				// Update pos
-				if enemy.vel != Vector2::zero() {
-					enemy.pos += enemy.vel;
-				}
-
+				// Updates position
+				enemy.update_pos(dt.as_secs_f32());
 				// Shooting
 				if enemy.proj_cd.is_over() && world.rect.contains(enemy.pos) {
 					let proj = {
@@ -673,44 +683,44 @@ fn main() -> Result<(), Error> {
 			// Projectiles physics
 			let mut to_remove: Vec<usize> = vec![];
 			for (i, proj) in world.projectiles.iter_mut().enumerate() {
-				proj.pos += proj.vel;
+				proj.pos += proj.vel * dt.as_secs_f32() / DT_60;
 				if !world.rect.contains(proj.pos) {
 					to_remove.push(i);
-				} else {
-					for (j, enemy) in world.enemies.iter_mut().enumerate() {
-						if collide_rectangle(
-							enemy.pos,
-							proj.pos,
-							enemy.size,
-							Dimensions { w: 10., h: 10. },
-						) & matches!(proj.variant, ProjType::PlayerShoot)
-						{
-							enemy.hp -= 2.;
-							to_remove.push(i);
-							if enemy.hp <= 0. {
-								world.enemies.remove(j);
-								break;
-							}
-						}
-					}
-					if player.hp_cd.is_over()
-						& collide_rectangle(
-							player.pos,
-							proj.pos,
-							player.size_hit,
-							Dimensions { w: 10., h: 10. },
-						) & !matches!(proj.variant, ProjType::PlayerShoot)
+					continue;
+				}
+				for (j, enemy) in world.enemies.iter_mut().enumerate() {
+					if collide_rectangle(
+						enemy.pos,
+						proj.pos,
+						enemy.size,
+						Dimensions { w: 10., h: 10. },
+					) & matches!(proj.variant, ProjType::PlayerShoot)
 					{
-						player.hp -= 1;
+						enemy.hp -= 2.;
 						to_remove.push(i);
-						if player.hp == 0 {
-							// Goofiest dead message
-							println!("Ur so dead 💀, RIP BOZO 🔫🔫😂😂😂😂");
-							*control_flow = ControlFlow::Exit;
+						if enemy.hp <= 0. {
+							world.enemies.remove(j);
 							break;
 						}
-						player.hp_cd.last_emit = Some(Instant::now());
 					}
+				}
+				if player.hp_cd.is_over()
+					& collide_rectangle(
+						player.pos,
+						proj.pos,
+						player.size_hit,
+						Dimensions { w: 10., h: 10. },
+					) & !matches!(proj.variant, ProjType::PlayerShoot)
+				{
+					player.hp -= 1;
+					to_remove.push(i);
+					if player.hp == 0 {
+						// Goofiest dead message
+						println!("Ur so dead 💀, RIP BOZO 🔫🔫😂😂😂😂");
+						*control_flow = ControlFlow::Exit;
+						break;
+					}
+					player.hp_cd.last_emit = Some(Instant::now());
 				}
 			}
 			for i in to_remove.into_iter().rev() {
@@ -822,20 +832,21 @@ fn main() -> Result<(), Error> {
 			);
 
 			// Limit fps refresh for it to be readable
+			dt = Instant::elapsed(&t);
 			if world.fps_cd.is_over() {
-				dt = Instant::elapsed(&t);
+				world.fps = (1. / dt.as_secs_f64()).round() as u32;
 				world.fps_cd.last_emit = Some(Instant::now());
 			}
 			t = Instant::now();
-			let fps = format!("FPS: {fps:3}", fps = (1. / dt.as_secs_f64()).round() as u32);
-			let text_dims = Dimensions { w: fps.len() as i32 * 4 * 5, h: 6 * 5 };
+			let fps_str = format!("FPS: {fps:3}", fps = world.fps);
+			let text_dims = Dimensions { w: fps_str.len() as i32 * 4 * 5, h: 6 * 5 };
 			draw_text(
 				&mut frame_buffer,
 				frame_buffer_dims,
 				&font_sheet,
 				Rect { top_left: (WIN_W as i32 - text_dims.w, 0).into(), dims: text_dims },
 				[0xff, 0xff, 0xff, 0xb0],
-				&fps,
+				&fps_str,
 			);
 			world.infos.time = Instant::elapsed(&world.infos.begin);
 			world.infos.frame_count += 1;
