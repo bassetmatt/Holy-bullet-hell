@@ -1,10 +1,10 @@
 use cgmath::Point2;
-use winit::dpi::PhysicalSize;
-
+use num::Zero;
 use std::{
 	convert::{From, Into},
 	fmt::Debug,
 };
+use winit::dpi::PhysicalSize;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Dimensions<T: Copy> {
@@ -30,11 +30,21 @@ impl<T: Copy> Dimensions<T> {
 	}
 }
 
-impl Dimensions<u32> {
-	pub fn into_rect(self) -> RectI {
-		Rect { top_left: (0, 0).into(), dims: self.into_dim() }
-	}
+macro_rules! into_rect_impl {
+	($t:ty, $v: ty) => {
+		impl Dimensions<$t> {
+			pub fn into_rect(self) -> Rect<$v> {
+				Rect {
+					top_left: (<$v>::zero(), <$v>::zero()).into(),
+					dims: self.into_dim(),
+				}
+			}
+		}
+	};
 }
+
+into_rect_impl!(u32, i32);
+into_rect_impl!(f32, f32);
 
 macro_rules! dim_to_physical_size {
 	($type: ty) => {

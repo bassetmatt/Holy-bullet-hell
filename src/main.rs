@@ -244,7 +244,7 @@ struct Game {
 	player: Player,
 	projectiles: Vec<Projectile>,
 	enemies: Vec<Enemy>,
-	dims: Dimensions<f32>,
+	rect: RectF,
 	inputs: Inputs,
 	fps_cd: Cooldown,
 	infos: GlobalInfo,
@@ -258,7 +258,7 @@ impl Game {
 			player: Player::new(),
 			projectiles: Vec::new(),
 			enemies: vec![],
-			dims,
+			rect: dims.into_rect(),
 			inputs: Inputs::new(),
 			fps_cd: Cooldown::with_duration(Duration::from_millis(100)),
 			infos: GlobalInfo::new(),
@@ -581,11 +581,11 @@ fn main() -> Result<(), Error> {
 			// Update pos
 			if player.vel != Vector2::zero() {
 				let new_pos = player.pos + 5. * player.vel;
-				// Separate x and y checks to allow orthogonal movement while on the edge
-				if 0. <= new_pos.x && new_pos.x <= world.dims.w {
+				// Separate x and y checks to allow movement while on an edge
+				if 0. <= new_pos.x && new_pos.x <= world.rect.dims.w {
 					player.pos.x = new_pos.x;
 				}
-				if 0. <= new_pos.y && new_pos.y <= world.dims.h {
+				if 0. <= new_pos.y && new_pos.y <= world.rect.dims.h {
 					player.pos.y = new_pos.y;
 				}
 			}
@@ -631,7 +631,7 @@ fn main() -> Result<(), Error> {
 				}
 
 				// Shooting
-				if enemy.proj_cd.is_over() && enemy.pos.x >= 0. && enemy.pos.y >= 0. {
+				if enemy.proj_cd.is_over() && world.rect.contains(enemy.pos) {
 					let proj = {
 						let pos = enemy.pos + enemy.size.h * 0.6 * Vector2::unit_y();
 						match enemy.variant {
@@ -674,11 +674,7 @@ fn main() -> Result<(), Error> {
 			let mut to_remove: Vec<usize> = vec![];
 			for (i, proj) in world.projectiles.iter_mut().enumerate() {
 				proj.pos += proj.vel;
-				if proj.pos.x < 0.
-					|| proj.pos.x >= world.dims.w
-					|| proj.pos.y < 0.
-					|| proj.pos.y >= world.dims.h
-				{
+				if !world.rect.contains(proj.pos) {
 					to_remove.push(i);
 				} else {
 					for (j, enemy) in world.enemies.iter_mut().enumerate() {
