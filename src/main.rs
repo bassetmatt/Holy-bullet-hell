@@ -147,7 +147,7 @@ impl Enemy {
 	fn spawn(pos: Point2<f32>, variant: EnemyType) -> Enemy {
 		let (size, proj_cd) = match variant {
 			EnemyType::Basic => ((48., 48.).into(), Cooldown::with_secs(10. * DT_60)),
-			EnemyType::Sniper => ((32., 48.).into(), Cooldown::with_secs(30. * DT_60)),
+			EnemyType::Sniper => ((32., 48.).into(), Cooldown::with_secs(15. * DT_60)),
 		};
 		Self {
 			pos,
@@ -191,15 +191,10 @@ impl Enemy {
 				}
 			},
 			EnemyType::Sniper => {
-				self.vel = Vector2::zero();
-				if self.pos.y <= 200. {
-					self.vel = Vector2::unit_y() * SPEED;
-				} else if self.pos.x <= 600. {
-					self.vel = Vector2::unit_x() * SPEED
-				}
-				if self.pos.x >= 600. && self.pos.y >= 100. {
-					self.vel = -Vector2::unit_y() * SPEED;
-				}
+				let mid_up: Point2<f32> = (bounds.dims.w / 2., 0.).into();
+				let to_mid = (mid_up - self.pos).normalize();
+				// Orthogonal, needs better solution because only one direction works
+				self.vel = Vector2::new(to_mid.y, -to_mid.x) * SPEED * 5.;
 			},
 		}
 		// Update pos
