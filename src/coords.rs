@@ -1,5 +1,5 @@
 use cgmath::Point2;
-use num::Zero;
+use num::{NumCast, Zero};
 use std::{
 	convert::{From, Into},
 	fmt::Debug,
@@ -18,15 +18,12 @@ impl<T: Copy> From<(T, T)> for Dimensions<T> {
 	}
 }
 
-impl<T: Copy> Dimensions<T> {
+impl<T: Copy + NumCast> Dimensions<T> {
 	pub fn into_dim<V>(self) -> Dimensions<V>
 	where
-		V: TryFrom<T> + Debug + Copy,
+		V: Copy + NumCast,
 	{
-		match (self.w.try_into(), self.h.try_into()) {
-			(Ok(w), Ok(h)) => Dimensions { w, h },
-			_ => panic!("Error"),
-		}
+		Dimensions { w: num::cast(self.w).unwrap(), h: num::cast(self.h).unwrap() }
 	}
 }
 

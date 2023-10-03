@@ -144,49 +144,19 @@ struct Enemy {
 }
 
 impl Enemy {
-	fn _new(variant: EnemyType) -> Self {
-		Self {
-			pos: (150., 40.).into(),
-			vel: Vector2::zero(),
-			size: Dimensions { w: 48., h: 48. },
-			hp: 400.,
-			proj_cd: Cooldown::with_secs(10. * DT_60),
-			variant,
-			_state: EnemyState::NotSpawned,
-		}
-	}
-
 	fn spawn(pos: Point2<f32>, variant: EnemyType) -> Enemy {
-		let size;
-		let hp;
-		let proj_cd;
-		match variant {
-			EnemyType::Basic => {
-				hp = 100.;
-				size = (48., 48.).into();
-				proj_cd = Cooldown::with_secs(10. * DT_60);
-			},
-			EnemyType::Sniper => {
-				hp = 50.;
-				size = (32., 48.).into();
-				proj_cd = Cooldown::with_secs(30. * DT_60);
-			},
+		let (size, proj_cd) = match variant {
+			EnemyType::Basic => ((48., 48.).into(), Cooldown::with_secs(10. * DT_60)),
+			EnemyType::Sniper => ((32., 48.).into(), Cooldown::with_secs(30. * DT_60)),
 		};
 		Self {
 			pos,
 			vel: Vector2::zero(),
 			size,
-			hp,
+			hp: Self::max_hp(variant),
 			proj_cd,
 			variant,
 			_state: EnemyState::NotSpawned,
-		}
-	}
-
-	fn hp_max_from_variant(&self) -> f32 {
-		match self.variant {
-			EnemyType::Basic => 100.,
-			EnemyType::Sniper => 50.,
 		}
 	}
 
@@ -201,16 +171,23 @@ impl Enemy {
 		}
 	}
 
-	fn update_pos(&mut self, dt: f32) {
+	fn max_hp(variant: EnemyType) -> f32 {
+		match variant {
+			EnemyType::Basic => 30.,
+			EnemyType::Sniper => 15.,
+		}
+	}
+
+	fn update_pos(&mut self, bounds: RectF, dt: f32) {
 		// Enemies behavior
 		const SPEED: f32 = 0.5;
 		match self.variant {
 			EnemyType::Basic => {
-				self.vel = Vector2::zero();
-				if self.pos.y <= 150. {
-					self.vel = Vector2::unit_y() * SPEED;
-				} else if self.pos.x <= 750. {
-					self.vel = Vector2::unit_x() * SPEED;
+				self.vel = Vector2::unit_y() * SPEED;
+				if self.pos.x <= bounds.dims.w / 2. {
+					self.vel -= Vector2::unit_x() * SPEED;
+				} else if self.pos.x > bounds.dims.w / 2. {
+					self.vel += Vector2::unit_x() * SPEED;
 				}
 			},
 			EnemyType::Sniper => {
@@ -489,7 +466,7 @@ fn load_level(level_file: &str, dimensions: Dimensions<f32>) -> std::io::Result<
 				let x: f32 = event.next().unwrap().parse().unwrap();
 				let y: f32 = event.next().unwrap().parse().unwrap();
 				let event = EventType::SpawnEnemy(t, (x, y).into(), variant);
-
+				println!("Event: {t}, {x}, {y}", t = t.as_secs_f32());
 				world
 					.event_list
 					.push(Event { time: world.infos.begin + t, variant: event });
@@ -556,11 +533,7 @@ fn main() -> Result<(), Error> {
 			.build()
 			.unwrap()
 	};
-	let mut world = load_level(
-		"./levels/level1.hbh",
-		Dimensions { w: frame_buffer_dims.w as f32, h: frame_buffer_dims.h as f32 },
-	)
-	.unwrap();
+	let mut world = load_level("./levels/level1.hbh", frame_buffer_dims.into_dim::<f32>()).unwrap();
 
 	let font_file = include_bytes!("../assets/font.png");
 	let font_sheet = image::load_from_memory_with_format(font_file, ImageFormat::Png)
@@ -609,7 +582,7 @@ fn main() -> Result<(), Error> {
 			// Applying events
 			let mut to_remove = vec![];
 			for (i, e) in world.event_list.iter().enumerate() {
-				if e.time >= Instant::now() {
+				if Instant::now() >= e.time {
 					if let EventType::SpawnEnemy(_, pos, variant) = e.variant {
 						world.enemies.push(Enemy::spawn(pos, variant));
 					}
@@ -639,7 +612,7 @@ fn main() -> Result<(), Error> {
 			// Enemies physics
 			for enemy in world.enemies.iter_mut() {
 				// Updates position
-				enemy.update_pos(dt.as_secs_f32());
+				enemy.update_pos(world.rect, dt.as_secs_f32());
 				// Shooting
 				if enemy.proj_cd.is_over() && world.rect.contains(enemy.pos) {
 					let proj = {
@@ -778,7 +751,7 @@ fn main() -> Result<(), Error> {
 					Rect::life_bar(
 						enemy.pos,
 						enemy.size,
-						enemy.hp / enemy.hp_max_from_variant(),
+						enemy.hp / Enemy::max_hp(enemy.variant),
 					),
 					[0x00, 0xff, 0x00, 0xff],
 				);
