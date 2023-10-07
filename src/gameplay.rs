@@ -93,8 +93,8 @@ pub enum EnemyType {
 
 enum EnemyState {
 	NotSpawned,
-	_OnScreen(fn(&mut Enemy)),
-	_OffScreen,
+	OnScreen(fn(&mut Enemy, RectF)),
+	OffScreen,
 }
 
 pub struct Enemy {
@@ -104,7 +104,7 @@ pub struct Enemy {
 	pub hp: f32,
 	proj_cd: Cooldown,
 	pub variant: EnemyType,
-	_state: EnemyState,
+	state: EnemyState,
 }
 
 impl Enemy {
@@ -120,7 +120,7 @@ impl Enemy {
 			hp: Self::max_hp(variant),
 			proj_cd,
 			variant,
-			_state: EnemyState::NotSpawned,
+			state: EnemyState::NotSpawned,
 		}
 	}
 
@@ -131,28 +131,47 @@ impl Enemy {
 		}
 	}
 
+	fn enemy_func(&mut self) -> fn(&mut Enemy, RectF) {
+		const SPEED: f32 = 0.5;
+		match self.variant {
+			EnemyType::Basic => |enemy, bounds| {
+				enemy.vel = Vector2::unit_y() * SPEED;
+				if enemy.pos.x <= bounds.dims.w / 2. {
+					enemy.vel -= Vector2::unit_x() * SPEED;
+				} else if enemy.pos.x > bounds.dims.w / 2. {
+					enemy.vel += Vector2::unit_x() * SPEED;
+				}
+			},
+			EnemyType::Sniper => |enemy, bounds| {
+				let mid_up: Point2<f32> = (bounds.dims.w / 2., 0.).into();
+				let to_mid = (mid_up - enemy.pos).normalize();
+				// Orthogonal, needs better solution because only one direction works
+				enemy.vel = Vector2::new(to_mid.y, -to_mid.x) * SPEED * 5.;
+			},
+		}
+	}
 	fn update_pos(&mut self, bounds: RectF, dt: f32) {
 		// Enemies behavior
 		const SPEED: f32 = 0.5;
-		match self.variant {
-			EnemyType::Basic => {
-				self.vel = Vector2::unit_y() * SPEED;
-				if self.pos.x <= bounds.dims.w / 2. {
-					self.vel -= Vector2::unit_x() * SPEED;
-				} else if self.pos.x > bounds.dims.w / 2. {
-					self.vel += Vector2::unit_x() * SPEED;
-				}
-			},
-			EnemyType::Sniper => {
-				let mid_up: Point2<f32> = (bounds.dims.w / 2., 0.).into();
-				let to_mid = (mid_up - self.pos).normalize();
-				// Orthogonal, needs better solution because only one direction works
-				self.vel = Vector2::new(to_mid.y, -to_mid.x) * SPEED * 5.;
-			},
-		}
 		// Update pos
 		if self.vel != Vector2::zero() {
 			self.pos += self.vel * dt / DT_60;
+		}
+		match self.state {
+			EnemyState::NotSpawned => {
+				self.vel = Vector2::unit_y() * SPEED;
+				self.pos += self.vel * dt / DT_60;
+				if bounds.contains(self.pos) {
+					self.state = EnemyState::OnScreen(self.enemy_func());
+				};
+			},
+			EnemyState::OnScreen(f) => {
+				f(self, bounds);
+				if bounds.contains(self.pos) {
+					self.state = EnemyState::OffScreen;
+				}
+			},
+			_ => {},
 		}
 	}
 }
@@ -303,9 +322,13 @@ impl Game {
 		}
 
 		// Enemies physics
-		for enemy in self.enemies.iter_mut() {
+		let mut to_remove = vec![];
+		for (i, enemy) in self.enemies.iter_mut().enumerate() {
 			// Updates position
 			enemy.update_pos(self.rect, dt.as_secs_f32());
+			if matches!(enemy.state, EnemyState::OffScreen) {
+				to_remove.push(i);
+			}
 			// Shooting
 			if enemy.proj_cd.is_over() && self.rect.contains(enemy.pos) {
 				let proj = {
@@ -327,6 +350,9 @@ impl Game {
 				self.projectiles.push(proj);
 				enemy.proj_cd.last_emit = Some(Instant::now());
 			}
+		}
+		for i in to_remove.into_iter().rev() {
+			self.enemies.remove(i);
 		}
 	}
 
