@@ -3,10 +3,6 @@ name = "holy_bullet_hell"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-# To use an azerty layout, compile with --features kb_azerty
-kb_azerty = []
-
 [dependencies]
 cgmath = "0.18.0"
 env_logger = "0.10"

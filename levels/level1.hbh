@@ -1,9 +1,9 @@
 # Events
 // <type>    <var>  <t> <x> <y>
-@spawn-enemy basic  1  400 -25
-@spawn-enemy basic  1  450 -25
-@spawn-enemy basic  3  550 -25
-@spawn-enemy sniper 2  950 -25
+@spawn-enemy basic   1  400 -25
+@spawn-enemy basic   1  450 -25
+@spawn-enemy basic   3  550 -25
+@spawn-enemy sniper  2  950 -25
 
 # Player
 $lives 5
