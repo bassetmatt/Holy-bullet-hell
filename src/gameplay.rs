@@ -167,7 +167,7 @@ impl Enemy {
 			},
 			EnemyState::OnScreen(f) => {
 				f(self, bounds);
-				if bounds.contains(self.pos) {
+				if !bounds.contains(self.pos) {
 					self.state = EnemyState::OffScreen;
 				}
 			},
