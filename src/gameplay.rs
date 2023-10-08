@@ -153,10 +153,6 @@ impl Enemy {
 	fn update_pos(&mut self, bounds: RectF, dt: f32) {
 		// Enemies behavior
 		const SPEED: f32 = 0.5;
-		// Update pos
-		if self.vel != Vector2::zero() {
-			self.pos += self.vel * dt / DT_60;
-		}
 		match self.state {
 			EnemyState::NotSpawned => {
 				self.vel = Vector2::unit_y() * SPEED;
@@ -172,6 +168,10 @@ impl Enemy {
 				}
 			},
 			_ => {},
+		}
+		// Update pos
+		if self.vel != Vector2::zero() {
+			self.pos += self.vel * dt / DT_60;
 		}
 	}
 }
@@ -218,28 +218,11 @@ pub struct Event {
 	variant: EventType,
 }
 
-#[derive(Default)]
-pub struct Inputs {
-	pub left: bool,
-	pub right: bool,
-	pub up: bool,
-	pub down: bool,
-	pub shoot: bool,
-	pub _pause: bool,
-}
-
-impl Inputs {
-	fn new() -> Inputs {
-		Inputs { ..Default::default() }
-	}
-}
-
-pub struct Game {
+pub struct World {
 	pub player: Player,
 	pub projectiles: Vec<Projectile>,
 	pub enemies: Vec<Enemy>,
 	rect: RectF,
-	pub inputs: Inputs,
 	fps_cd: Cooldown,
 	pub fps: u32,
 	pub score: u64,
@@ -247,7 +230,7 @@ pub struct Game {
 	event_list: Vec<Event>,
 }
 
-impl Game {
+impl World {
 	/// Create a new `World` instance that can draw a moving box.
 	pub fn start(dims: Dimensions<f32>) -> Self {
 		Self {
@@ -255,7 +238,6 @@ impl Game {
 			projectiles: Vec::new(),
 			enemies: vec![],
 			rect: dims.into_rect(),
-			inputs: Inputs::new(),
 			fps_cd: Cooldown::with_duration(Duration::from_millis(100)),
 			fps: 60,
 			score: 0,
@@ -282,12 +264,6 @@ impl Game {
 			self.fps = (1. / dt.as_secs_f64()).round() as u32;
 			self.fps_cd.last_emit = Some(Instant::now());
 		}
-	}
-
-	pub fn push_event(&mut self, t: Duration, event: EventType) {
-		self
-			.event_list
-			.push(Event { time: self.infos.begin + t, variant: event });
 	}
 
 	pub fn process_events(&mut self) {

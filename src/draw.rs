@@ -1,5 +1,5 @@
 use cgmath::{Point2, Vector2};
-use image::{DynamicImage, GenericImageView};
+use image::{DynamicImage, GenericImageView, ImageFormat};
 use pixels::Pixels;
 
 use crate::coords::{Dimensions, Rect, RectI};
@@ -9,6 +9,18 @@ pub const WIN_H: u32 = 720;
 
 pub const BG_COLOR: [u8; 4] = [0x08, 0x0b, 0x1e, 0xff];
 const BG_COLOR_UI: [u8; 4] = [0x20, 0x11, 0x38, 0xff];
+
+const FONT_SHEET: DynamicImage = {
+	let font_file: &[u8] = include_bytes!("../assets/font.png");
+	image::load_from_memory_with_format(font_file, ImageFormat::Png)
+		.expect("Failed to load font file")
+};
+
+const SPRITESHEET: DynamicImage = {
+	let sheet_file: &[u8] = include_bytes!("../assets/spritesheet.png");
+	image::load_from_memory_with_format(sheet_file, ImageFormat::Png)
+		.expect("Failed to load spritesheet")
+};
 
 pub fn conv_srgb_to_linear(x: f64) -> f64 {
 	// See https://github.com/gfx-rs/wgpu/issues/2326
@@ -35,15 +47,17 @@ pub fn draw_rect(
 	dst: RectI,
 	mut color: [u8; 4],
 ) {
+	// Transparent
+	if color[3] == 0x00 {
+		return;
+	}
 	let window = pixel_buffer_dims.into_rect();
 	for coords in dst.iter() {
 		if window.contains(coords) {
 			let pixel_index = coords.y * pixel_buffer_dims.w as i32 + coords.x;
 			let pixel_byte_index = pixel_index as usize * 4;
 			let pixel_bytes = pixel_byte_index..(pixel_byte_index + 4);
-			if color[3] == 0x00 {
-				continue;
-			} else if color[3] != 0xff {
+			if color[3] != 0xff {
 				let old_color = pixel_buffer.frame_mut().get(pixel_bytes.clone()).unwrap();
 				let alpha = color[3] as f32 / 255.;
 				color[0] = opacity!(color, old_color, alpha, 0);
@@ -223,8 +237,8 @@ impl Projectile {
 	}
 }
 
-use crate::gameplay::Game;
-impl Game {
+use crate::gameplay::World;
+impl World {
 	pub fn draw_gameplay(
 		&self,
 		frame_buffer: &mut Pixels,

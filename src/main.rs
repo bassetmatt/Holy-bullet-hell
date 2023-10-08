@@ -1,49 +1,17 @@
 #![allow(unused_assignments)]
 mod coords;
 mod draw;
+mod game;
 mod gameplay;
 
-use image::ImageFormat;
 use pixels::{Error, SurfaceTexture};
-use std::fs;
 use std::time::{Duration, Instant};
 use winit::dpi::PhysicalSize;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
 use crate::coords::Dimensions;
-use crate::gameplay::{EnemyType, EventType, Game};
-
-fn load_level(level_file: &str, dimensions: Dimensions<f32>) -> std::io::Result<Game> {
-	let level_raw_data = fs::read_to_string(level_file)?;
-
-	let mut world = Game::start(Dimensions { w: 0.8 * dimensions.w, h: dimensions.h });
-
-	let events = level_raw_data
-		.split('\n')
-		.filter_map(|x| x.strip_prefix('@'));
-
-	for event in events {
-		let mut event = event.split_whitespace();
-		match event.next().unwrap() {
-			"spawn-enemy" => {
-				let variant = match event.next().unwrap() {
-					"basic" => EnemyType::Basic,
-					"sniper" => EnemyType::Sniper,
-					other => unimplemented!("Enemy type {other} doesn't exist"),
-				};
-				let t: f32 = event.next().unwrap().parse().unwrap();
-				let t = Duration::from_secs_f32(t);
-				let x: f32 = event.next().unwrap().parse().unwrap();
-				let y: f32 = event.next().unwrap().parse().unwrap();
-				let event = EventType::SpawnEnemy(t, (x, y).into(), variant);
-				world.push_event(t, event);
-			},
-			evt => unimplemented!("Unknown event {evt}"),
-		}
-	}
-	Ok(world)
-}
+use crate::game::Game;
 
 fn main() -> Result<(), Error> {
 	env_logger::init();
@@ -86,18 +54,10 @@ fn main() -> Result<(), Error> {
 			.unwrap()
 	};
 	let mut world = load_level("./levels/level1.hbh", frame_buffer_dims.into_dim::<f32>()).unwrap();
-
-	let font_file = include_bytes!("../assets/font.png");
-	let font_sheet = image::load_from_memory_with_format(font_file, ImageFormat::Png)
-		.expect("Failed to load font file");
-
-	let sheet_file = include_bytes!("../assets/spritesheet.png");
-	let spritesheet = image::load_from_memory_with_format(sheet_file, ImageFormat::Png)
-		.expect("Failed to load font file");
-
+	let mut game = Game::launch();
 	let mut t = Instant::now();
 	let mut dt = Duration::from_secs(1);
-	use winit::event::*;
+	use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 	event_loop.run(move |event, _, control_flow| match event {
 		Event::WindowEvent { window_id, ref event } if window_id == window.id() => match event {
 			WindowEvent::CloseRequested
@@ -116,18 +76,12 @@ fn main() -> Result<(), Error> {
 				frame_buffer
 					.resize_surface(size.width, size.height)
 					.unwrap();
+				// TODO: Adapt frame_buffer_dims
 			},
 			WindowEvent::KeyboardInput {
 				input: KeyboardInput { state, virtual_keycode: Some(key), .. },
 				..
-			} => match key {
-				VirtualKeyCode::Up => world.inputs.up = matches!(state, ElementState::Pressed),
-				VirtualKeyCode::Down => world.inputs.down = matches!(state, ElementState::Pressed),
-				VirtualKeyCode::Left => world.inputs.left = matches!(state, ElementState::Pressed),
-				VirtualKeyCode::Right => world.inputs.right = matches!(state, ElementState::Pressed),
-				VirtualKeyCode::X => world.inputs.shoot = matches!(state, ElementState::Pressed),
-				_ => {},
-			},
+			} => game.process_input(*state, *key),
 			_ => {},
 		},
 		Event::MainEventsCleared => {
