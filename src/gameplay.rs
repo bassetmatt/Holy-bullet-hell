@@ -1,5 +1,8 @@
 use cgmath::{InnerSpace, Point2, Vector2, Zero};
-use std::time::{Duration, Instant};
+use std::{
+	collections::HashMap,
+	time::{Duration, Instant},
+};
 use winit::event_loop::ControlFlow;
 
 use crate::coords::{Dimensions, RectF};
@@ -188,34 +191,23 @@ pub struct Projectile {
 	pub variant: ProjType,
 }
 
-pub struct GlobalInfo {
-	begin: Instant,
-	time: Duration,
-	frame_count: u64,
-}
-
-impl GlobalInfo {
-	fn new() -> GlobalInfo {
-		GlobalInfo {
-			begin: Instant::now(),
-			time: Duration::from_secs(0),
-			frame_count: 0,
-		}
-	}
-
-	pub fn update(&mut self) {
-		self.time = Instant::elapsed(&self.begin);
-		self.frame_count += 1;
-	}
-}
-
 pub enum EventType {
-	SpawnEnemy(Duration, Point2<f32>, EnemyType),
-	_SpawnBoss(Duration, Point2<f32>),
+	SpawnEnemy(Point2<f32>, EnemyType),
+	_SpawnBoss(Point2<f32>),
 }
+
 pub struct Event {
-	time: Instant,
-	variant: EventType,
+	pub id: u32,
+	pub time: Option<Instant>,
+	/// (`id`, `offset`), id of the trigger event, and the duration of the wait after said event is triggered
+	pub ref_evt: Option<(u32, Duration)>,
+	pub variant: EventType,
+}
+
+pub struct EventSystem {
+	list: Vec<Event>,
+	history: HashMap<u32, Instant>,
+	latest_id: u32,
 }
 
 pub struct World {
@@ -226,8 +218,7 @@ pub struct World {
 	fps_cd: Cooldown,
 	pub fps: u32,
 	pub score: u64,
-	pub infos: GlobalInfo,
-	event_list: Vec<Event>,
+	event_syst: EventSystem,
 }
 
 impl World {
@@ -241,7 +232,6 @@ impl World {
 			fps_cd: Cooldown::with_duration(Duration::from_millis(100)),
 			fps: 60,
 			score: 0,
-			infos: GlobalInfo::new(),
 			event_list: vec![],
 		}
 	}
@@ -270,7 +260,7 @@ impl World {
 		let mut to_remove = vec![];
 		for (i, e) in self.event_list.iter().enumerate() {
 			if Instant::now() >= e.time {
-				if let EventType::SpawnEnemy(_, pos, variant) = e.variant {
+				if let EventType::SpawnEnemy(pos, variant) = e.variant {
 					self.enemies.push(Enemy::spawn(pos, variant));
 				}
 				to_remove.push(i);
