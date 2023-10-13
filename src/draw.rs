@@ -13,17 +13,23 @@ use crate::gameplay::{Enemy, EnemyType, Player, ProjType, Projectile};
 pub const BG_COLOR: [u8; 4] = [0x08, 0x0b, 0x1e, 0xff];
 const BG_COLOR_UI: [u8; 4] = [0x20, 0x11, 0x38, 0xff];
 
-const FONT_SHEET: DynamicImage = {
-	let font_file: &[u8] = include_bytes!("../assets/font.png");
-	image::load_from_memory_with_format(font_file, ImageFormat::Png)
-		.expect("Failed to load font file")
-};
+pub struct Sheets {
+	font: DynamicImage,
+	spritesheet: DynamicImage,
+}
 
-const SPRITESHEET: DynamicImage = {
-	let sheet_file: &[u8] = include_bytes!("../assets/spritesheet.png");
-	image::load_from_memory_with_format(sheet_file, ImageFormat::Png)
-		.expect("Failed to load spritesheet")
-};
+impl Sheets {
+	pub fn load() -> Self {
+		const FONT_FILE: &[u8] = include_bytes!("../assets/font.png");
+		const SPRITESHEET_FILE: &[u8] = include_bytes!("../assets/spritesheet.png");
+		let font: DynamicImage = image::load_from_memory_with_format(FONT_FILE, ImageFormat::Png)
+			.expect("Failed to load font file");
+		let spritesheet: DynamicImage =
+			image::load_from_memory_with_format(SPRITESHEET_FILE, ImageFormat::Png)
+				.expect("Failed to load spritesheet");
+		Sheets { font, spritesheet }
+	}
+}
 
 pub fn conv_srgb_to_linear(x: f64) -> f64 {
 	// See https://github.com/gfx-rs/wgpu/issues/2326
@@ -49,7 +55,7 @@ pub fn create_window(event_loop: &EventLoop<()>) -> Window {
 			.with_min_inner_size(win_size)
 			.with_max_inner_size(win_size)
 			.with_fullscreen(None)
-			.build(&event_loop)
+			.build(event_loop)
 			.unwrap()
 	};
 	// Centers the window
@@ -59,8 +65,9 @@ pub fn create_window(event_loop: &EventLoop<()>) -> Window {
 		screen_size.width / 2 - window_outer_size.width / 2,
 		screen_size.height / 2 - window_outer_size.height / 2,
 	));
-	return window;
+	window
 }
+
 pub struct FrameBuffer {
 	pub buffer: Pixels,
 	pub dims: Dimensions<u32>,
@@ -77,7 +84,7 @@ impl FrameBuffer {
 				a: conv_srgb_to_linear(BG_COLOR[3] as f64 / 255.0),
 			}
 		};
-		let mut buffer = {
+		let buffer = {
 			let surface_texture = SurfaceTexture::new(dims.w, dims.h, &window);
 			pixels::PixelsBuilder::new(dims.w, dims.h, surface_texture)
 				.clear_color(bg_color_wgpu)
@@ -102,7 +109,7 @@ impl Game {
 		self.frame_buffer.dims = (*size).into();
 	}
 
-	pub fn toggle_fullscreen(&mut self) {
+	pub fn _toggle_fullscreen(&mut self) {
 		let window = &self.window;
 		if window.fullscreen().is_some() {
 			window.set_fullscreen(None);
@@ -113,8 +120,17 @@ impl Game {
 	}
 
 	pub fn draw_in_game(&mut self) {
-		self.world.unwrap().draw_gameplay(&mut self.frame_buffer);
-		self.world.unwrap().draw_interface(&mut self.frame_buffer);
+		let world = &mut self.world.as_mut().unwrap();
+		world.draw_gameplay(&mut self.frame_buffer, &self.sheets);
+		world.draw_interface(
+			&mut self.frame_buffer,
+			&self.sheets,
+			self.infos.fps_info.fps,
+		);
+	}
+
+	pub fn render(&mut self) {
+		self.frame_buffer.buffer.render().unwrap();
 	}
 }
 
@@ -124,6 +140,7 @@ macro_rules! opacity {
 	};
 }
 
+// TODO: Change arguments to FrameBuffer
 pub fn draw_rect(
 	pixel_buffer: &mut pixels::Pixels,
 	pixel_buffer_dims: Dimensions<u32>,
@@ -153,6 +170,7 @@ pub fn draw_rect(
 	}
 }
 
+// TODO: Change arguments to FrameBuffer
 fn char_position(c: char) -> Option<(u32, u32)> {
 	let fourth_line = "`~!@#$%^&*'\".";
 	let fifth_line = "()[]{}?/\\|:;,";
@@ -180,6 +198,7 @@ struct SpriteCoords {
 	dims: Dimensions<u32>,
 }
 
+// TODO: Change arguments to FrameBuffer
 fn draw_text(
 	frame_buffer: &mut pixels::Pixels,
 	frame_buffer_dims: Dimensions<u32>,
@@ -213,6 +232,7 @@ fn draw_text(
 	}
 }
 
+// TODO: Change arguments to FrameBuffer
 fn draw_sprite(
 	frame_buffer: &mut pixels::Pixels,
 	frame_buffer_dims: Dimensions<u32>,
@@ -258,6 +278,7 @@ fn draw_sprite(
 	}
 }
 
+// TODO: Move to gameplay.rs (I think?)
 impl RectI {
 	fn life_bar_full(pos: Point2<f32>, dims: Dimensions<f32>) -> RectI {
 		RectI {
@@ -296,8 +317,8 @@ impl Enemy {
 	fn sprite_coords(&self) -> SpriteCoords {
 		SpriteCoords {
 			sheet_pos: match self.variant {
-				EnemyType::Basic => (2, 0),
-				EnemyType::Sniper => (3, 0),
+				EnemyType::_Basic => (2, 0),
+				EnemyType::_Sniper => (3, 0),
 			}
 			.into(),
 			dims: (8, 8).into(),
@@ -320,9 +341,9 @@ impl Projectile {
 }
 
 impl World {
-	pub fn draw_gameplay(&self, frame_buffer: &mut FrameBuffer) {
+	pub fn draw_gameplay(&self, frame_buffer: &mut FrameBuffer, sheets: &Sheets) {
 		let frame_buffer_dims = frame_buffer.dims;
-		let mut frame_buffer = &mut frame_buffer.buffer;
+		let frame_buffer = &mut frame_buffer.buffer;
 		// Draws Background
 		frame_buffer
 			.frame_mut()
@@ -334,7 +355,7 @@ impl World {
 		draw_sprite(
 			frame_buffer,
 			frame_buffer_dims,
-			&SPRITESHEET,
+			&sheets.spritesheet,
 			player.sprite_coords(),
 			Rect::from_float(player.pos, player.size),
 			None,
@@ -343,7 +364,7 @@ impl World {
 		draw_sprite(
 			frame_buffer,
 			frame_buffer_dims,
-			&SPRITESHEET,
+			&sheets.spritesheet,
 			player.sprite_coords_hit(),
 			Rect::from_float(player.pos, player.size_hit),
 			None,
@@ -354,7 +375,7 @@ impl World {
 			draw_sprite(
 				frame_buffer,
 				frame_buffer_dims,
-				&SPRITESHEET,
+				&sheets.spritesheet,
 				enemy.sprite_coords(),
 				Rect::from_float(enemy.pos, enemy.size),
 				None,
@@ -382,7 +403,7 @@ impl World {
 			draw_sprite(
 				frame_buffer,
 				frame_buffer_dims,
-				&SPRITESHEET,
+				&sheets.spritesheet,
 				proj.sprite_coords(),
 				Rect::from_float(proj.pos, Dimensions { w: 10., h: 10. }),
 				None,
@@ -390,9 +411,9 @@ impl World {
 		}
 	}
 
-	pub fn draw_interface(&self, frame_buffer: &mut FrameBuffer) {
+	pub fn draw_interface(&self, frame_buffer: &mut FrameBuffer, sheets: &Sheets, fps: u32) {
 		let frame_buffer_dims = frame_buffer.dims;
-		let mut frame_buffer = &mut frame_buffer.buffer;
+		let frame_buffer = &mut frame_buffer.buffer;
 
 		let interf_begin_x = (0.8 * WIN_W as f32) as usize;
 		// Interface
@@ -421,7 +442,7 @@ impl World {
 		draw_text(
 			frame_buffer,
 			frame_buffer_dims,
-			&FONT_SHEET,
+			&sheets.font,
 			Rect {
 				top_left: (interf_begin_x as i32 + 16, 128).into(),
 				dims: (4 * s.len() as i32 * 5, 6 * 5 * 2).into(),
@@ -435,7 +456,7 @@ impl World {
 		draw_text(
 			frame_buffer,
 			frame_buffer_dims,
-			&FONT_SHEET,
+			&sheets.font,
 			Rect {
 				top_left: (WIN_W as i32 - text_dims.w, 40).into(),
 				dims: text_dims,
@@ -444,12 +465,12 @@ impl World {
 			&score_str,
 		);
 
-		let fps_str = format!("FPS: {fps:3}", fps = self.fps);
+		let fps_str = format!("FPS: {fps:3}", fps = fps);
 		let text_dims = Dimensions { w: fps_str.len() as i32 * 4 * 5, h: 6 * 5 };
 		draw_text(
 			frame_buffer,
 			frame_buffer_dims,
-			&FONT_SHEET,
+			&sheets.font,
 			Rect { top_left: (WIN_W as i32 - text_dims.w, 0).into(), dims: text_dims },
 			[0xff, 0xff, 0xff, 0xb0],
 			&fps_str,

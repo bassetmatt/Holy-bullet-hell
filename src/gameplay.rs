@@ -1,12 +1,14 @@
 use cgmath::{InnerSpace, Point2, Vector2, Zero};
-use log::Level;
 use std::{
 	collections::HashMap,
 	time::{Duration, Instant},
 };
 use winit::event_loop::ControlFlow;
 
-use crate::coords::{Dimensions, RectF};
+use crate::{
+	coords::{Dimensions, RectF},
+	game::Inputs,
+};
 
 pub const DT_60: f32 = 1. / 60.;
 
@@ -47,7 +49,7 @@ pub struct Player {
 }
 
 impl Player {
-	fn new() -> Self {
+	fn _new() -> Self {
 		Self {
 			pos: (75., 200.).into(),
 			vel: (0., 0.).into(),
@@ -93,10 +95,10 @@ impl Player {
 	}
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum EnemyType {
-	Basic,
-	Sniper,
+	_Basic,
+	_Sniper,
 }
 
 enum EnemyState {
@@ -118,8 +120,8 @@ pub struct Enemy {
 impl Enemy {
 	fn spawn(pos: Point2<f32>, variant: EnemyType) -> Enemy {
 		let (size, proj_cd) = match variant {
-			EnemyType::Basic => ((48., 48.).into(), Cooldown::with_secs(25. * DT_60)),
-			EnemyType::Sniper => ((32., 48.).into(), Cooldown::with_secs(40. * DT_60)),
+			EnemyType::_Basic => ((48., 48.).into(), Cooldown::with_secs(25. * DT_60)),
+			EnemyType::_Sniper => ((32., 48.).into(), Cooldown::with_secs(40. * DT_60)),
 		};
 		Self {
 			pos,
@@ -134,15 +136,15 @@ impl Enemy {
 
 	pub fn max_hp(variant: EnemyType) -> f32 {
 		match variant {
-			EnemyType::Basic => 15.,
-			EnemyType::Sniper => 8.,
+			EnemyType::_Basic => 15.,
+			EnemyType::_Sniper => 8.,
 		}
 	}
 
 	fn enemy_func(&mut self) -> fn(&mut Enemy, RectF) {
 		const SPEED: f32 = 0.5;
 		match self.variant {
-			EnemyType::Basic => |enemy, bounds| {
+			EnemyType::_Basic => |enemy, bounds| {
 				enemy.vel = Vector2::unit_y() * SPEED;
 				if enemy.pos.x <= bounds.dims.w / 2. {
 					enemy.vel -= Vector2::unit_x() * SPEED;
@@ -150,7 +152,7 @@ impl Enemy {
 					enemy.vel += Vector2::unit_x() * SPEED;
 				}
 			},
-			EnemyType::Sniper => |enemy, bounds| {
+			EnemyType::_Sniper => |enemy, bounds| {
 				let mid_up: Point2<f32> = (bounds.dims.w / 2., 0.).into();
 				let to_mid = (mid_up - enemy.pos).normalize();
 				// Orthogonal, needs better solution because only one direction works
@@ -196,9 +198,9 @@ pub struct Projectile {
 	pub variant: ProjType,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum EventType {
-	SpawnEnemy(Point2<f32>, EnemyType),
+	_SpawnEnemy(Point2<f32>, EnemyType),
 	_SpawnBoss(Point2<f32>),
 }
 
@@ -214,22 +216,26 @@ pub struct Event {
 pub struct EventSystem {
 	list: Vec<Event>,
 	history: HashMap<u32, Instant>,
-	latest_id: u32,
+	_latest_id: u32,
 }
 
 impl EventSystem {
-	fn new(evt_list: Vec<Event>) -> Self {
-		use crate::game::LEVEL_REF;
+	fn _new(evt_list: Vec<Event>) -> Self {
+		use crate::game::_LEVEL_REF;
 		let mut list = vec![];
 		for evt in evt_list {
 			let mut evt = evt.clone();
-			if evt.ref_evt.is_some_and(|(x, t)| x == LEVEL_REF) {
+			if evt.ref_evt.is_some_and(|(x, _)| x == _LEVEL_REF) {
 				evt.time = Some(Instant::now() + evt.ref_evt.unwrap().1);
 				evt.ref_evt = None;
 			}
 			list.push(evt);
 		}
-		Self { list, history: HashMap::new(), latest_id: 0 }
+		Self { list, history: HashMap::new(), _latest_id: 0 }
+	}
+
+	fn events_clear(&self) -> bool {
+		self.list.is_empty()
 	}
 }
 
@@ -238,24 +244,20 @@ pub struct World {
 	pub projectiles: Vec<Projectile>,
 	pub enemies: Vec<Enemy>,
 	rect: RectF,
-	fps_cd: Cooldown,
-	pub fps: u32,
 	pub score: u64,
 	event_syst: EventSystem,
 }
 
 impl World {
 	/// Create a new `World` instance that can draw a moving box.
-	pub fn start(dims: Dimensions<f32>, evt_list: Vec<Event>) -> Self {
+	pub fn _start(dims: Dimensions<f32>, evt_list: Vec<Event>) -> Self {
 		Self {
-			player: Player::new(),
+			player: Player::_new(),
 			projectiles: Vec::new(),
 			enemies: vec![],
 			rect: dims.into_rect(),
-			fps_cd: Cooldown::with_duration(Duration::from_millis(100)),
-			fps: 60,
 			score: 0,
-			event_list: EventSystem::new(evt_list),
+			event_syst: EventSystem::_new(evt_list),
 		}
 	}
 
@@ -265,7 +267,7 @@ impl World {
 			println!("Ur so dead 💀, RIP BOZO 🔫🔫😂😂😂😂");
 			*control_flow = ControlFlow::Exit;
 		}
-		if self.enemies.is_empty() && self.event_list.is_empty() {
+		if self.enemies.is_empty() && self.event_syst.events_clear() {
 			println!("You won! Score: {score}", score = self.score);
 			*control_flow = ControlFlow::Exit;
 		}
@@ -273,23 +275,41 @@ impl World {
 
 	pub fn process_events(&mut self) {
 		let mut to_remove = vec![];
-		for (i, e) in self.event_list.iter().enumerate() {
-			if Instant::now() >= e.time {
-				if let EventType::SpawnEnemy(pos, variant) = e.variant {
-					self.enemies.push(Enemy::spawn(pos, variant));
+		let evt_list = &mut self.event_syst.list;
+		let map = &mut self.event_syst.history;
+		// Checks if absolute events are triggered
+		for (i, e) in evt_list.iter().enumerate() {
+			if e.time.is_some_and(|t| Instant::now() >= t) {
+				match &e.variant {
+					EventType::_SpawnEnemy(pos, variant) => {
+						self.enemies.push(Enemy::spawn(*pos, *variant));
+					},
+					var => {
+						unimplemented!("Event variant '{var:?}' not implemented")
+					},
 				}
+				map.insert(e.id, Instant::now());
 				to_remove.push(i);
 			}
 		}
+		// Removes done events
 		for i in to_remove.into_iter().rev() {
-			self.event_list.remove(i);
+			evt_list.remove(i);
+		}
+		// Updates relative events to be transformed into absolute events
+		for e in evt_list.iter_mut() {
+			if let Some((id, t)) = e.ref_evt {
+				if map.contains_key(&id) {
+					e.ref_evt = None;
+					e.time = Some(map[&id] + t);
+				}
+			}
 		}
 	}
 
-	pub fn update_entities(&mut self, dt: Duration) {
+	pub fn update_entities(&mut self, dt: Duration, inputs: &Inputs) {
 		// Player
 		let player = &mut self.player;
-		let inputs = &self.inputs;
 		player.update_pos(inputs, self.rect, dt.as_secs_f32());
 		// Player shoot
 		if inputs.shoot & player.proj_cd.is_over() {
@@ -315,10 +335,10 @@ impl World {
 				let proj = {
 					let pos = enemy.pos + enemy.size.h * 0.6 * Vector2::unit_y();
 					match enemy.variant {
-						EnemyType::Basic => {
+						EnemyType::_Basic => {
 							Projectile { pos, vel: Vector2::unit_y() * 10., variant: ProjType::Basic }
 						},
-						EnemyType::Sniper => {
+						EnemyType::_Sniper => {
 							let delta = player.pos - pos;
 							let mut to_player = Vector2::zero();
 							if delta != Vector2::zero() {

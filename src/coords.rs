@@ -29,6 +29,7 @@ impl<T: Copy + NumCast> Dimensions<T> {
 
 macro_rules! into_rect_impl {
 	($t:ty, $v: ty) => {
+		#[allow(dead_code)]
 		impl Dimensions<$t> {
 			pub fn into_rect(self) -> Rect<$v> {
 				Rect {
