@@ -1,4 +1,5 @@
 use cgmath::{InnerSpace, Point2, Vector2, Zero};
+use log::Level;
 use std::{
 	collections::HashMap,
 	time::{Duration, Instant},
@@ -19,15 +20,19 @@ impl Cooldown {
 	fn with_secs(secs: f32) -> Self {
 		Cooldown { last_emit: None, cooldown: Duration::from_secs_f32(secs) }
 	}
-	fn with_duration(value: Duration) -> Self {
+	pub fn with_duration(value: Duration) -> Self {
 		Cooldown { last_emit: None, cooldown: value }
 	}
 
-	fn is_over(&self) -> bool {
+	pub fn is_over(&self) -> bool {
 		if let Some(last) = self.last_emit {
 			return Instant::elapsed(&last) >= self.cooldown;
 		}
 		true
+	}
+
+	pub fn emit(&mut self) {
+		self.last_emit = Some(Instant::now());
 	}
 }
 
@@ -191,11 +196,13 @@ pub struct Projectile {
 	pub variant: ProjType,
 }
 
+#[derive(Clone)]
 pub enum EventType {
 	SpawnEnemy(Point2<f32>, EnemyType),
 	_SpawnBoss(Point2<f32>),
 }
 
+#[derive(Clone)]
 pub struct Event {
 	pub id: u32,
 	pub time: Option<Instant>,
@@ -208,6 +215,22 @@ pub struct EventSystem {
 	list: Vec<Event>,
 	history: HashMap<u32, Instant>,
 	latest_id: u32,
+}
+
+impl EventSystem {
+	fn new(evt_list: Vec<Event>) -> Self {
+		use crate::game::LEVEL_REF;
+		let mut list = vec![];
+		for evt in evt_list {
+			let mut evt = evt.clone();
+			if evt.ref_evt.is_some_and(|(x, t)| x == LEVEL_REF) {
+				evt.time = Some(Instant::now() + evt.ref_evt.unwrap().1);
+				evt.ref_evt = None;
+			}
+			list.push(evt);
+		}
+		Self { list, history: HashMap::new(), latest_id: 0 }
+	}
 }
 
 pub struct World {
@@ -223,7 +246,7 @@ pub struct World {
 
 impl World {
 	/// Create a new `World` instance that can draw a moving box.
-	pub fn start(dims: Dimensions<f32>) -> Self {
+	pub fn start(dims: Dimensions<f32>, evt_list: Vec<Event>) -> Self {
 		Self {
 			player: Player::new(),
 			projectiles: Vec::new(),
@@ -232,7 +255,7 @@ impl World {
 			fps_cd: Cooldown::with_duration(Duration::from_millis(100)),
 			fps: 60,
 			score: 0,
-			event_list: vec![],
+			event_list: EventSystem::new(evt_list),
 		}
 	}
 
@@ -245,14 +268,6 @@ impl World {
 		if self.enemies.is_empty() && self.event_list.is_empty() {
 			println!("You won! Score: {score}", score = self.score);
 			*control_flow = ControlFlow::Exit;
-		}
-	}
-
-	pub fn update_fps(&mut self, dt: Duration) {
-		// Limit fps refresh for it to be readable
-		if self.fps_cd.is_over() {
-			self.fps = (1. / dt.as_secs_f64()).round() as u32;
-			self.fps_cd.last_emit = Some(Instant::now());
 		}
 	}
 

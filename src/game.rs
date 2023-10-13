@@ -1,11 +1,17 @@
-use std::{
-	fs,
-	time::{Duration, Instant},
-};
-
 use crate::{
 	coords::Dimensions,
-	gameplay::{EnemyType, Event, EventType, World},
+	draw::{create_window, FrameBuffer},
+	gameplay::{Cooldown, EnemyType, Event, EventType, World},
+};
+use std::{
+	fs,
+	path::Path,
+	time::{Duration, Instant},
+};
+use winit::{
+	event::{ElementState, VirtualKeyCode},
+	event_loop::EventLoop,
+	window::{self, Window},
 };
 
 enum GameState {
@@ -32,15 +38,9 @@ struct Level {
 	event_list: Vec<Event>,
 }
 
+pub const LEVEL_REF: u32 = u32::MAX;
 impl Level {
-	fn push_event(&mut self, t: Duration, event: EventType) {
-		self
-			.event_list
-			// TODO: Redo the whole time thing
-			.push(Event { time: self.infos.begin + t, variant: event });
-	}
-
-	fn level_from_file(game: Game, level_file: &str) -> Level {
+	fn level_from_file(game: &mut Game, level_file: &str) {
 		let level_raw_data = fs::read_to_string(level_file).unwrap();
 		let mut level = Level {
 			id: game.levels.len() as u32,
@@ -83,17 +83,17 @@ impl Level {
 					let y: f32 = event.next().unwrap().parse().unwrap();
 					let ref_evt = event.next().unwrap().parse::<u32>().ok().map(|x| (x, t));
 					let variant = EventType::SpawnEnemy((x, y).into(), variant);
-					// TODO: Put this in push event
+					// Events are all relative, the "absolute" events will be relative to the beginning of the level
 					let evt = match ref_evt {
-						Some(thing) => Event { id, time: None, variant, ref_evt: Some(thing) },
-						None => Event { id, time: None, variant, ref_evt: Some((u32::MAX, t)) },
+						Some(_) => Event { id, time: None, variant, ref_evt },
+						None => Event { id, time: None, variant, ref_evt: Some((LEVEL_REF, t)) },
 					};
 					level.event_list.push(evt);
 				},
 				evt => unimplemented!("Unknown event '{evt}'"),
 			}
 		}
-		level
+		game.levels.push(level);
 	}
 }
 
@@ -113,15 +113,29 @@ impl Inputs {
 	}
 }
 
+struct FpsCounter {
+	fps: u32,
+	cooldown: Cooldown,
+}
+
 pub struct GlobalInfo {
 	game_begin: Instant,
 	level_begin: Option<Instant>,
 	frame_count: u64,
+	fps_info: FpsCounter,
 }
 
 impl GlobalInfo {
 	fn new() -> GlobalInfo {
-		GlobalInfo { game_begin: Instant::now(), level_begin: None, frame_count: 0 }
+		GlobalInfo {
+			game_begin: Instant::now(),
+			level_begin: None,
+			frame_count: 0,
+			fps_info: FpsCounter {
+				fps: 0,
+				cooldown: Cooldown::with_duration(Duration::from_millis(100)),
+			},
+		}
 	}
 
 	fn start_level(&mut self) {
@@ -143,22 +157,43 @@ impl GlobalInfo {
 
 pub struct Game {
 	state: GameState,
-	world: Option<World>,
+	pub world: Option<World>,
 	levels: Vec<Level>,
 	inputs: Inputs,
-	infos: GlobalInfo,
+	pub infos: GlobalInfo,
+	pub window: Window,
+	pub frame_buffer: FrameBuffer,
 }
 
-use winit::event::{ElementState, VirtualKeyCode};
 impl Game {
-	pub fn launch() -> Game {
+	pub fn launch(event_loop: EventLoop<()>) -> Game {
+		env_logger::init();
+		let mut window = create_window(&event_loop);
 		Game {
 			state: GameState::Menu(MenuChoice::Play),
 			world: None,
+			levels: vec![],
 			inputs: Inputs::new(),
+			infos: GlobalInfo::new(),
+			window,
+			frame_buffer: FrameBuffer::new(&window),
 		}
 	}
-	pub fn process_input(&mut self, state: ElementState, key: VirtualKeyCode) {
+
+	pub fn load_levels(&mut self) {
+		const LEVEL_DIR: &Path = Path::new("./levels");
+		if !LEVEL_DIR.exists() {
+			panic!("Levels directory doesn't exist");
+		}
+		for level in fs::read_dir(LEVEL_DIR).unwrap() {
+			let path = level.unwrap().path();
+			if path.is_file() && path.extension().is_some_and(|ext| ext == "hbh") {
+				Level::level_from_file(self, path.to_str().unwrap());
+			}
+		}
+	}
+
+	pub fn process_input(&mut self, state: &ElementState, key: &VirtualKeyCode) {
 		match key {
 			VirtualKeyCode::Up => self.inputs.up = matches!(state, ElementState::Pressed),
 			VirtualKeyCode::Down => self.inputs.down = matches!(state, ElementState::Pressed),
@@ -168,7 +203,23 @@ impl Game {
 			_ => {},
 		}
 	}
-	fn start_level(&mut self, level: Level) -> World {
-		return World::start(Dimensions { w: 0.8 * dimensions.w, h: dimensions.h });
+
+	fn start_level(&mut self, id: u32) {
+		self.infos.start_level();
+		let dims = self.frame_buffer.dims;
+		let new_world = World::start(
+			Dimensions { w: (0.8 * dims.w as f32), h: dims.h as f32 },
+			self.levels.get(id as usize).unwrap().event_list.clone(),
+		);
+		self.world = Some(new_world);
+	}
+
+	pub fn update_fps(&mut self, dt: Duration) {
+		// Limit fps refresh for it to be readable
+		let fps_infos = &mut self.infos.fps_info;
+		if fps_infos.cooldown.is_over() {
+			fps_infos.fps = (1. / dt.as_secs_f64()).round() as u32;
+			fps_infos.cooldown.emit();
+		}
 	}
 }

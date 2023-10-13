@@ -1,11 +1,14 @@
 use cgmath::{Point2, Vector2};
 use image::{DynamicImage, GenericImageView, ImageFormat};
-use pixels::Pixels;
+use pixels::{Pixels, SurfaceTexture};
+use winit::dpi::PhysicalSize;
+use winit::event_loop::EventLoop;
+use winit::window::{Fullscreen, Window, WindowBuilder};
 
 use crate::coords::{Dimensions, Rect, RectI};
-
-pub const WIN_W: u32 = 1280;
-pub const WIN_H: u32 = 720;
+use crate::game::Game;
+use crate::gameplay::World;
+use crate::gameplay::{Enemy, EnemyType, Player, ProjType, Projectile};
 
 pub const BG_COLOR: [u8; 4] = [0x08, 0x0b, 0x1e, 0xff];
 const BG_COLOR_UI: [u8; 4] = [0x20, 0x11, 0x38, 0xff];
@@ -32,6 +35,86 @@ pub fn conv_srgb_to_linear(x: f64) -> f64 {
 		((x + 0.055) / 1.055).powf(2.4)
 	} else {
 		x / 12.92
+	}
+}
+
+const WIN_W: u32 = 1280;
+const WIN_H: u32 = 720;
+pub fn create_window(event_loop: &EventLoop<()>) -> Window {
+	let window = {
+		let win_size = PhysicalSize::new(WIN_W, WIN_H);
+		WindowBuilder::new()
+			.with_title("Holy Bullet Hell")
+			.with_inner_size(win_size)
+			.with_min_inner_size(win_size)
+			.with_max_inner_size(win_size)
+			.with_fullscreen(None)
+			.build(&event_loop)
+			.unwrap()
+	};
+	// Centers the window
+	let screen_size = window.available_monitors().next().unwrap().size();
+	let window_outer_size = window.outer_size();
+	window.set_outer_position(winit::dpi::PhysicalPosition::new(
+		screen_size.width / 2 - window_outer_size.width / 2,
+		screen_size.height / 2 - window_outer_size.height / 2,
+	));
+	return window;
+}
+pub struct FrameBuffer {
+	pub buffer: Pixels,
+	pub dims: Dimensions<u32>,
+}
+
+impl FrameBuffer {
+	pub fn new(window: &Window) -> Self {
+		let dims: Dimensions<u32> = window.inner_size().into();
+		let bg_color_wgpu: pixels::wgpu::Color = {
+			pixels::wgpu::Color {
+				r: conv_srgb_to_linear(BG_COLOR[0] as f64 / 255.0),
+				g: conv_srgb_to_linear(BG_COLOR[1] as f64 / 255.0),
+				b: conv_srgb_to_linear(BG_COLOR[2] as f64 / 255.0),
+				a: conv_srgb_to_linear(BG_COLOR[3] as f64 / 255.0),
+			}
+		};
+		let mut buffer = {
+			let surface_texture = SurfaceTexture::new(dims.w, dims.h, &window);
+			pixels::PixelsBuilder::new(dims.w, dims.h, surface_texture)
+				.clear_color(bg_color_wgpu)
+				.build()
+				.unwrap()
+		};
+		FrameBuffer { buffer, dims }
+	}
+}
+
+impl Game {
+	pub fn redraw(&mut self) {
+		self.window.request_redraw();
+	}
+
+	pub fn resize(&mut self, size: &PhysicalSize<u32>) {
+		self
+			.frame_buffer
+			.buffer
+			.resize_surface(size.width, size.height)
+			.unwrap();
+		self.frame_buffer.dims = (*size).into();
+	}
+
+	pub fn toggle_fullscreen(&mut self) {
+		let window = &self.window;
+		if window.fullscreen().is_some() {
+			window.set_fullscreen(None);
+		} else {
+			let fs = Fullscreen::Borderless(window.current_monitor());
+			window.set_fullscreen(Some(fs));
+		}
+	}
+
+	pub fn draw_in_game(&mut self) {
+		self.world.unwrap().draw_gameplay(&mut self.frame_buffer);
+		self.world.unwrap().draw_interface(&mut self.frame_buffer);
 	}
 }
 
@@ -196,7 +279,6 @@ impl RectI {
 	}
 }
 
-use crate::gameplay::{Enemy, EnemyType, Player, ProjType, Projectile};
 impl Player {
 	fn sprite_coords(&self) -> SpriteCoords {
 		SpriteCoords {
@@ -237,14 +319,10 @@ impl Projectile {
 	}
 }
 
-use crate::gameplay::World;
 impl World {
-	pub fn draw_gameplay(
-		&self,
-		frame_buffer: &mut Pixels,
-		frame_buffer_dims: Dimensions<u32>,
-		spritesheet: &DynamicImage,
-	) {
+	pub fn draw_gameplay(&self, frame_buffer: &mut FrameBuffer) {
+		let frame_buffer_dims = frame_buffer.dims;
+		let mut frame_buffer = &mut frame_buffer.buffer;
 		// Draws Background
 		frame_buffer
 			.frame_mut()
@@ -256,7 +334,7 @@ impl World {
 		draw_sprite(
 			frame_buffer,
 			frame_buffer_dims,
-			spritesheet,
+			&SPRITESHEET,
 			player.sprite_coords(),
 			Rect::from_float(player.pos, player.size),
 			None,
@@ -265,7 +343,7 @@ impl World {
 		draw_sprite(
 			frame_buffer,
 			frame_buffer_dims,
-			spritesheet,
+			&SPRITESHEET,
 			player.sprite_coords_hit(),
 			Rect::from_float(player.pos, player.size_hit),
 			None,
@@ -276,7 +354,7 @@ impl World {
 			draw_sprite(
 				frame_buffer,
 				frame_buffer_dims,
-				spritesheet,
+				&SPRITESHEET,
 				enemy.sprite_coords(),
 				Rect::from_float(enemy.pos, enemy.size),
 				None,
@@ -304,7 +382,7 @@ impl World {
 			draw_sprite(
 				frame_buffer,
 				frame_buffer_dims,
-				spritesheet,
+				&SPRITESHEET,
 				proj.sprite_coords(),
 				Rect::from_float(proj.pos, Dimensions { w: 10., h: 10. }),
 				None,
@@ -312,12 +390,10 @@ impl World {
 		}
 	}
 
-	pub fn draw_interface(
-		&self,
-		frame_buffer: &mut Pixels,
-		frame_buffer_dims: Dimensions<u32>,
-		font_sheet: &DynamicImage,
-	) {
+	pub fn draw_interface(&self, frame_buffer: &mut FrameBuffer) {
+		let frame_buffer_dims = frame_buffer.dims;
+		let mut frame_buffer = &mut frame_buffer.buffer;
+
 		let interf_begin_x = (0.8 * WIN_W as f32) as usize;
 		// Interface
 		frame_buffer
@@ -345,7 +421,7 @@ impl World {
 		draw_text(
 			frame_buffer,
 			frame_buffer_dims,
-			font_sheet,
+			&FONT_SHEET,
 			Rect {
 				top_left: (interf_begin_x as i32 + 16, 128).into(),
 				dims: (4 * s.len() as i32 * 5, 6 * 5 * 2).into(),
@@ -359,7 +435,7 @@ impl World {
 		draw_text(
 			frame_buffer,
 			frame_buffer_dims,
-			font_sheet,
+			&FONT_SHEET,
 			Rect {
 				top_left: (WIN_W as i32 - text_dims.w, 40).into(),
 				dims: text_dims,
@@ -373,7 +449,7 @@ impl World {
 		draw_text(
 			frame_buffer,
 			frame_buffer_dims,
-			font_sheet,
+			&FONT_SHEET,
 			Rect { top_left: (WIN_W as i32 - text_dims.w, 0).into(), dims: text_dims },
 			[0xff, 0xff, 0xff, 0xb0],
 			&fps_str,
