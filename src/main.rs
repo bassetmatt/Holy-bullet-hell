@@ -13,6 +13,9 @@ use crate::game::Game;
 fn main() -> Result<(), Error> {
 	let event_loop = EventLoop::new();
 	let mut game = Game::launch(&event_loop);
+	// TODO: Put that in main loop when there will be a menu
+	game.load_levels();
+	game.start_level(0);
 
 	let mut t = Instant::now();
 	let mut dt = Duration::from_secs(1);

@@ -49,7 +49,7 @@ pub struct Player {
 }
 
 impl Player {
-	fn _new() -> Self {
+	fn new() -> Self {
 		Self {
 			pos: (75., 200.).into(),
 			vel: (0., 0.).into(),
@@ -97,8 +97,8 @@ impl Player {
 
 #[derive(Clone, Copy, Debug)]
 pub enum EnemyType {
-	_Basic,
-	_Sniper,
+	Basic,
+	Sniper,
 }
 
 enum EnemyState {
@@ -120,8 +120,8 @@ pub struct Enemy {
 impl Enemy {
 	fn spawn(pos: Point2<f32>, variant: EnemyType) -> Enemy {
 		let (size, proj_cd) = match variant {
-			EnemyType::_Basic => ((48., 48.).into(), Cooldown::with_secs(25. * DT_60)),
-			EnemyType::_Sniper => ((32., 48.).into(), Cooldown::with_secs(40. * DT_60)),
+			EnemyType::Basic => ((48., 48.).into(), Cooldown::with_secs(25. * DT_60)),
+			EnemyType::Sniper => ((32., 48.).into(), Cooldown::with_secs(40. * DT_60)),
 		};
 		Self {
 			pos,
@@ -136,15 +136,15 @@ impl Enemy {
 
 	pub fn max_hp(variant: EnemyType) -> f32 {
 		match variant {
-			EnemyType::_Basic => 15.,
-			EnemyType::_Sniper => 8.,
+			EnemyType::Basic => 15.,
+			EnemyType::Sniper => 8.,
 		}
 	}
 
 	fn enemy_func(&mut self) -> fn(&mut Enemy, RectF) {
 		const SPEED: f32 = 0.5;
 		match self.variant {
-			EnemyType::_Basic => |enemy, bounds| {
+			EnemyType::Basic => |enemy, bounds| {
 				enemy.vel = Vector2::unit_y() * SPEED;
 				if enemy.pos.x <= bounds.dims.w / 2. {
 					enemy.vel -= Vector2::unit_x() * SPEED;
@@ -152,7 +152,7 @@ impl Enemy {
 					enemy.vel += Vector2::unit_x() * SPEED;
 				}
 			},
-			EnemyType::_Sniper => |enemy, bounds| {
+			EnemyType::Sniper => |enemy, bounds| {
 				let mid_up: Point2<f32> = (bounds.dims.w / 2., 0.).into();
 				let to_mid = (mid_up - enemy.pos).normalize();
 				// Orthogonal, needs better solution because only one direction works
@@ -220,12 +220,12 @@ pub struct EventSystem {
 }
 
 impl EventSystem {
-	fn _new(evt_list: Vec<Event>) -> Self {
-		use crate::game::_LEVEL_REF;
+	fn new(evt_list: Vec<Event>) -> Self {
+		use crate::game::LEVEL_REF;
 		let mut list = vec![];
 		for evt in evt_list {
 			let mut evt = evt.clone();
-			if evt.ref_evt.is_some_and(|(x, _)| x == _LEVEL_REF) {
+			if evt.ref_evt.is_some_and(|(x, _)| x == LEVEL_REF) {
 				evt.time = Some(Instant::now() + evt.ref_evt.unwrap().1);
 				evt.ref_evt = None;
 			}
@@ -250,14 +250,14 @@ pub struct World {
 
 impl World {
 	/// Create a new `World` instance that can draw a moving box.
-	pub fn _start(dims: Dimensions<f32>, evt_list: Vec<Event>) -> Self {
+	pub fn start(dims: Dimensions<f32>, evt_list: Vec<Event>) -> Self {
 		Self {
-			player: Player::_new(),
+			player: Player::new(),
 			projectiles: Vec::new(),
 			enemies: vec![],
 			rect: dims.into_rect(),
 			score: 0,
-			event_syst: EventSystem::_new(evt_list),
+			event_syst: EventSystem::new(evt_list),
 		}
 	}
 
@@ -335,10 +335,10 @@ impl World {
 				let proj = {
 					let pos = enemy.pos + enemy.size.h * 0.6 * Vector2::unit_y();
 					match enemy.variant {
-						EnemyType::_Basic => {
+						EnemyType::Basic => {
 							Projectile { pos, vel: Vector2::unit_y() * 10., variant: ProjType::Basic }
 						},
-						EnemyType::_Sniper => {
+						EnemyType::Sniper => {
 							let delta = player.pos - pos;
 							let mut to_player = Vector2::zero();
 							if delta != Vector2::zero() {

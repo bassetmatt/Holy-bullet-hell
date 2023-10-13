@@ -317,8 +317,8 @@ impl Enemy {
 	fn sprite_coords(&self) -> SpriteCoords {
 		SpriteCoords {
 			sheet_pos: match self.variant {
-				EnemyType::_Basic => (2, 0),
-				EnemyType::_Sniper => (3, 0),
+				EnemyType::Basic => (2, 0),
+				EnemyType::Sniper => (3, 0),
 			}
 			.into(),
 			dims: (8, 8).into(),

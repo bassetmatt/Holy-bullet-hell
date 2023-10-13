@@ -33,18 +33,18 @@ enum OptionChoice {
 
 struct Level {
 	_id: u32,
-	_name: String,
-	_event_list: Vec<Event>,
+	name: String,
+	event_list: Vec<Event>,
 }
 
-pub const _LEVEL_REF: u32 = u32::MAX;
+pub const LEVEL_REF: u32 = u32::MAX;
 impl Level {
-	fn _level_from_file(game: &mut Game, level_file: &str) {
+	fn level_from_file(game: &mut Game, level_file: &str) {
 		let level_raw_data = fs::read_to_string(level_file).unwrap();
 		let mut level = Level {
-			_id: game._levels.len() as u32,
-			_event_list: vec![],
-			_name: String::new(),
+			_id: game.levels.len() as u32,
+			event_list: vec![],
+			name: String::new(),
 		};
 
 		let meta_data = level_raw_data
@@ -55,7 +55,7 @@ impl Level {
 			let data = data.split_once(char::is_whitespace).unwrap();
 			match data.0 {
 				"title" => {
-					level._name = data.1.into();
+					level.name = data.1.into();
 				},
 				data => {
 					unimplemented!("'{data}' keyword doesn't exist")
@@ -72,8 +72,8 @@ impl Level {
 			match event.next().unwrap() {
 				"spawn-enemy" => {
 					let variant = match event.next().unwrap() {
-						"basic" => EnemyType::_Basic,
-						"sniper" => EnemyType::_Sniper,
+						"basic" => EnemyType::Basic,
+						"sniper" => EnemyType::Sniper,
 						other => unimplemented!("Enemy type '{other}' doesn't exist"),
 					};
 					let t: f32 = event.next().unwrap().parse().unwrap();
@@ -85,14 +85,14 @@ impl Level {
 					// Events are all relative, the "absolute" events will be relative to the beginning of the level
 					let evt = match ref_evt {
 						Some(_) => Event { id, time: None, variant, ref_evt },
-						None => Event { id, time: None, variant, ref_evt: Some((_LEVEL_REF, t)) },
+						None => Event { id, time: None, variant, ref_evt: Some((LEVEL_REF, t)) },
 					};
-					level._event_list.push(evt);
+					level.event_list.push(evt);
 				},
 				evt => unimplemented!("Unknown event '{evt}'"),
 			}
 		}
-		game._levels.push(level);
+		game.levels.push(level);
 	}
 }
 
@@ -137,7 +137,7 @@ impl GlobalInfo {
 		}
 	}
 
-	fn _start_level(&mut self) {
+	fn start_level(&mut self) {
 		self._level_begin = Some(Instant::now());
 	}
 
@@ -157,7 +157,7 @@ impl GlobalInfo {
 pub struct Game {
 	_state: GameState,
 	pub world: Option<World>,
-	_levels: Vec<Level>,
+	levels: Vec<Level>,
 	inputs: Inputs,
 	pub infos: GlobalInfo,
 	pub window: Window,
@@ -172,7 +172,7 @@ impl Game {
 		Game {
 			_state: GameState::Menu(MenuChoice::Play),
 			world: None,
-			_levels: vec![],
+			levels: vec![],
 			inputs: Inputs::new(),
 			infos: GlobalInfo::new(),
 			frame_buffer: FrameBuffer::new(&window),
@@ -181,7 +181,7 @@ impl Game {
 		}
 	}
 
-	pub fn _load_levels(&mut self) {
+	pub fn load_levels(&mut self) {
 		let level_dir: &Path = Path::new("./levels");
 		if !level_dir.exists() {
 			panic!("Levels directory doesn't exist");
@@ -189,7 +189,7 @@ impl Game {
 		for level in fs::read_dir(level_dir).unwrap() {
 			let path = level.unwrap().path();
 			if path.is_file() && path.extension().is_some_and(|ext| ext == "hbh") {
-				Level::_level_from_file(self, path.to_str().unwrap());
+				Level::level_from_file(self, path.to_str().unwrap());
 			}
 		}
 	}
@@ -205,12 +205,12 @@ impl Game {
 		}
 	}
 
-	fn _start_level(&mut self, id: u32) {
-		self.infos._start_level();
+	pub fn start_level(&mut self, id: u32) {
+		self.infos.start_level();
 		let dims = self.frame_buffer.dims;
-		let new_world = World::_start(
+		let new_world = World::start(
 			Dimensions { w: (0.8 * dims.w as f32), h: dims.h as f32 },
-			self._levels.get(id as usize).unwrap()._event_list.clone(),
+			self.levels.get(id as usize).unwrap().event_list.clone(),
 		);
 		self.world = Some(new_world);
 	}
