@@ -44,16 +44,21 @@ pub fn conv_srgb_to_linear(x: f64) -> f64 {
 	}
 }
 
-const WIN_W: u32 = 1280;
-const WIN_H: u32 = 720;
+const SIZES: [Dimensions<u32>; 5] = [
+	Dimensions { w: 640, h: 360 },
+	Dimensions { w: 960, h: 540 },
+	Dimensions { w: 1280, h: 720 },
+	Dimensions { w: 1600, h: 900 },
+	Dimensions { w: 1920, h: 1080 },
+];
+pub const N_SIZES: usize = SIZES.len();
+
 pub fn create_window(event_loop: &EventLoop<()>) -> Window {
 	let window = {
-		let win_size = PhysicalSize::new(WIN_W, WIN_H);
+		let win_size = PhysicalSize::new(SIZES[2].w, SIZES[2].h);
 		WindowBuilder::new()
 			.with_title("Holy Bullet Hell")
 			.with_inner_size(win_size)
-			.with_min_inner_size(win_size)
-			.with_max_inner_size(win_size)
 			.with_fullscreen(None)
 			.build(event_loop)
 			.unwrap()
@@ -101,12 +106,30 @@ impl Game {
 	}
 
 	pub fn resize(&mut self, size: &PhysicalSize<u32>) {
+		let buf = &mut self.frame_buffer.buffer;
+		// Resize the window surface
+		buf.resize_surface(size.width, size.height).unwrap();
+		// Resize the pixel buffer
+		buf.resize_buffer(size.width, size.height).unwrap();
+		// Update the dimensions
+		self.frame_buffer.dims = self.window.inner_size().into();
+	}
+
+	pub fn cycle_window_size(&mut self) {
+		// Last entry must be the screen size
+		let index = self.options.resolution_choice as usize;
+		if index == N_SIZES - 1 {
+			self
+				.window
+				.set_fullscreen(Some(winit::window::Fullscreen::Borderless(
+					self.window.current_monitor(),
+				)));
+		} else {
+			self.window.set_fullscreen(None);
+		}
 		self
-			.frame_buffer
-			.buffer
-			.resize_surface(size.width, size.height)
-			.unwrap();
-		self.frame_buffer.dims = (*size).into();
+			.window
+			.set_inner_size(winit::dpi::LogicalSize::new(SIZES[index].w, SIZES[index].h));
 	}
 
 	pub fn _toggle_fullscreen(&mut self) {
@@ -121,6 +144,13 @@ impl Game {
 
 	pub fn draw_in_game(&mut self) {
 		let world = &mut self.world.as_mut().unwrap();
+		self
+			.frame_buffer
+			.buffer
+			.frame_mut()
+			.chunks_exact_mut(4)
+			.for_each(|pixel| pixel.copy_from_slice(&BG_COLOR));
+
 		world.draw_gameplay(&mut self.frame_buffer, &self.sheets);
 		world.draw_interface(
 			&mut self.frame_buffer,
@@ -414,15 +444,15 @@ impl World {
 	pub fn draw_interface(&self, frame_buffer: &mut FrameBuffer, sheets: &Sheets, fps: u32) {
 		let frame_buffer_dims = frame_buffer.dims;
 		let frame_buffer = &mut frame_buffer.buffer;
-
-		let interf_begin_x = (0.8 * WIN_W as f32) as usize;
-		// Interface
+		let win_w = frame_buffer_dims.w;
+		let interf_begin_x = (0.8 * win_w as f32) as usize;
+		// Interface background
 		frame_buffer
 			.frame_mut()
 			.chunks_exact_mut(4)
 			.enumerate()
 			.for_each(|(i, pixel)| {
-				if i % WIN_W as usize > interf_begin_x {
+				if i % frame_buffer_dims.w as usize > interf_begin_x {
 					pixel.copy_from_slice(&BG_COLOR_UI)
 				}
 			});
@@ -458,7 +488,7 @@ impl World {
 			frame_buffer_dims,
 			&sheets.font,
 			Rect {
-				top_left: (WIN_W as i32 - text_dims.w, 40).into(),
+				top_left: (win_w as i32 - text_dims.w, 40).into(),
 				dims: text_dims,
 			},
 			[0xff, 0xff, 0xff, 0xb0],
@@ -471,7 +501,7 @@ impl World {
 			frame_buffer,
 			frame_buffer_dims,
 			&sheets.font,
-			Rect { top_left: (WIN_W as i32 - text_dims.w, 0).into(), dims: text_dims },
+			Rect { top_left: (win_w as i32 - text_dims.w, 0).into(), dims: text_dims },
 			[0xff, 0xff, 0xff, 0xb0],
 			&fps_str,
 		);

@@ -14,21 +14,38 @@ use crate::draw::{create_window, FrameBuffer, Sheets};
 use crate::gameplay::{Cooldown, EnemyType, Event, EventType, World};
 
 enum GameState {
-	Menu(MenuChoice),
 	_Playing,
+	_Paused,
+	_Menu(MenuChoice),
 	_GameOver,
 }
 
 enum MenuChoice {
-	Play,
+	_Play,
 	_Options(OptionChoice),
 	_Quit,
 }
 
 enum OptionChoice {
-	_Resolution,
-	_Fullscreen,
+	_Resolution(u8),
+	_Fullscreen(bool),
 	_Back,
+}
+
+pub struct GameOptions {
+	pub resolution_choice: u8,
+	pub _fullscreen: bool,
+}
+
+impl GameOptions {
+	fn new() -> GameOptions {
+		GameOptions { resolution_choice: 2, _fullscreen: false }
+	}
+
+	// ? May be used when using old options saved somewhere
+	fn _new_from_args(resolution_choice: u8, _fullscreen: bool) -> GameOptions {
+		GameOptions { resolution_choice, _fullscreen }
+	}
 }
 
 struct Level {
@@ -156,6 +173,7 @@ impl GlobalInfo {
 
 pub struct Game {
 	_state: GameState,
+	pub options: GameOptions,
 	pub world: Option<World>,
 	levels: Vec<Level>,
 	inputs: Inputs,
@@ -170,7 +188,8 @@ impl Game {
 		env_logger::init();
 		let window = create_window(event_loop);
 		Game {
-			_state: GameState::Menu(MenuChoice::Play),
+			_state: GameState::_Playing,
+			options: GameOptions::new(),
 			world: None,
 			levels: vec![],
 			inputs: Inputs::new(),
