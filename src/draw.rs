@@ -2,14 +2,15 @@ use cgmath::{Point2, Vector2};
 use image::{DynamicImage, GenericImageView, ImageFormat};
 use num::rational::Ratio;
 use pixels::{Pixels, SurfaceTexture, TextureError};
-use winit::dpi::PhysicalSize;
-use winit::event_loop::EventLoop;
-use winit::window::{Fullscreen, Window, WindowBuilder};
+use winit::{
+	dpi::PhysicalSize,
+	event_loop::EventLoop,
+	window::{Fullscreen, Window, WindowBuilder},
+};
 
 use crate::coords::{Dimensions, Rect, RectI};
 use crate::game::Game;
-use crate::gameplay::World;
-use crate::gameplay::{Enemy, EnemyType, Player, ProjType, Projectile};
+use crate::gameplay::{Enemy, EnemyType, Player, ProjType, Projectile, World};
 
 struct DrawConstants {
 	interface_begin: f32,
@@ -146,7 +147,10 @@ impl ResizableWindow for Window {
 			self.set_fullscreen(None);
 		}
 		let size: PhysicalSize<u32> = DRAW_CONSTANTS.sizes[index as usize].into();
-		self.set_inner_size(size);
+		self
+			.request_inner_size(size)
+			.is_none()
+			.then(|| panic!("Failed to resize window"));
 		size
 	}
 }

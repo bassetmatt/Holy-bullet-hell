@@ -1,12 +1,14 @@
 use num::rational::Ratio;
+use smol_str::SmolStr;
 use std::{
 	fs,
 	path::Path,
 	time::{Duration, Instant},
 };
 use winit::{
-	event::{ElementState, VirtualKeyCode},
-	event_loop::{ControlFlow, EventLoop},
+	event::ElementState,
+	event_loop::{EventLoop, EventLoopWindowTarget},
+	keyboard::Key,
 	window::Window,
 };
 
@@ -219,13 +221,16 @@ impl Game {
 		}
 	}
 
-	pub fn process_input(&mut self, state: &ElementState, key: &VirtualKeyCode) {
+	pub fn process_input(&mut self, state: &ElementState, key: &Key) {
+		use winit::keyboard::NamedKey::*;
 		match key {
-			VirtualKeyCode::Up => self.inputs.up = matches!(state, ElementState::Pressed),
-			VirtualKeyCode::Down => self.inputs.down = matches!(state, ElementState::Pressed),
-			VirtualKeyCode::Left => self.inputs.left = matches!(state, ElementState::Pressed),
-			VirtualKeyCode::Right => self.inputs.right = matches!(state, ElementState::Pressed),
-			VirtualKeyCode::X => self.inputs.shoot = matches!(state, ElementState::Pressed),
+			Key::Named(ArrowUp) => self.inputs.up = matches!(state, ElementState::Pressed),
+			Key::Named(ArrowDown) => self.inputs.down = matches!(state, ElementState::Pressed),
+			Key::Named(ArrowLeft) => self.inputs.left = matches!(state, ElementState::Pressed),
+			Key::Named(ArrowRight) => self.inputs.right = matches!(state, ElementState::Pressed),
+			Key::Character(key) if key == &SmolStr::new("x") => {
+				self.inputs.shoot = matches!(state, ElementState::Pressed)
+			},
 			_ => {},
 		}
 	}
@@ -240,7 +245,7 @@ impl Game {
 		self.world = Some(new_world);
 	}
 
-	pub fn tick(&mut self, dt: Duration, control_flow: &mut ControlFlow) {
+	pub fn tick(&mut self, dt: Duration, control_flow: &EventLoopWindowTarget<()>) {
 		let world = &mut self.world.as_mut().unwrap();
 		// Applying events
 		world.process_events();

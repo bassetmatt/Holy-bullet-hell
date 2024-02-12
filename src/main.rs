@@ -4,14 +4,18 @@ mod draw;
 mod game;
 mod gameplay;
 
-use pixels::Error;
-use std::time::{Duration, Instant};
-use winit::event_loop::{ControlFlow, EventLoop};
-
 use crate::{draw::N_SIZES, game::Game};
+use smol_str::SmolStr;
+use std::time::{Duration, Instant};
+use winit::{
+	error::EventLoopError,
+	event::{ElementState, Event, KeyEvent, WindowEvent},
+	event_loop::EventLoop,
+	keyboard::Key,
+};
 
-fn main() -> Result<(), Error> {
-	let event_loop = EventLoop::new();
+fn main() -> Result<(), EventLoopError> {
+	let event_loop = EventLoop::new()?;
 	let mut game = Game::launch(&event_loop);
 	// TODO: Put that in main loop when there is a menu
 	game.load_levels();
@@ -19,31 +23,28 @@ fn main() -> Result<(), Error> {
 
 	let mut t = Instant::now();
 	let mut dt = Duration::from_secs(1);
-	use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
-	event_loop.run(move |event, _, control_flow| match event {
+	event_loop.run(move |event, evt_loop_target| match event {
 		Event::WindowEvent { window_id, ref event } if window_id == game.window.id() => match event {
 			WindowEvent::CloseRequested => {
 				//TODO: Save game ?
-				*control_flow = ControlFlow::Exit;
+				evt_loop_target.exit();
 			},
 			// The window shouldn't be manually resized
 			WindowEvent::Resized(_) => {},
-			WindowEvent::KeyboardInput {
-				input: KeyboardInput { state, virtual_keycode: Some(key), .. },
-				..
-			} => {
+			WindowEvent::KeyboardInput { event: KeyEvent { logical_key, state, .. }, .. } => {
+				use winit::keyboard::NamedKey::*;
 				if matches!(state, ElementState::Pressed) {
 					// TODO: Move these into a function
-					match key {
-						VirtualKeyCode::Escape => {
-							*control_flow = ControlFlow::Exit;
+					match logical_key {
+						Key::Named(Escape) => {
+							evt_loop_target.exit();
 						},
-						VirtualKeyCode::Plus => {
+						Key::Character(key) if key == &SmolStr::new("[") => {
 							game.options.resolution_choice += 1;
 							game.options.resolution_choice %= N_SIZES;
 							game.resize();
 						},
-						VirtualKeyCode::Minus => {
+						Key::Character(key) if key == &SmolStr::new("]") => {
 							game.options.resolution_choice -= 1;
 							game.options.resolution_choice %= N_SIZES;
 							game.resize();
@@ -51,11 +52,11 @@ fn main() -> Result<(), Error> {
 						_ => {},
 					}
 				}
-				game.process_input(state, key);
+				game.process_input(state, logical_key);
 			},
 			_ => {},
 		},
-		Event::MainEventsCleared => {
+		Event::AboutToWait => {
 			// TODO: Handle game state
 			// Computes time elapsed
 			// TODO: Can I swap the 2 last lines ??
@@ -63,17 +64,16 @@ fn main() -> Result<(), Error> {
 			t = Instant::now();
 			game.update_fps(dt);
 			// TODO: The game doesn't handle game window resizing
-			game.tick(dt, control_flow);
+			game.tick(dt, evt_loop_target);
 
 			// Drawing
 			game.draw_in_game();
 
 			game.infos.update();
 			game.redraw();
-		},
-		Event::RedrawRequested(_) => {
 			game.render();
 		},
 		_ => {},
-	});
+	})?;
+	Ok(())
 }

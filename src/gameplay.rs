@@ -1,14 +1,13 @@
+use crate::{
+	coords::{Dimensions, RectF},
+	game::Inputs,
+};
 use cgmath::{InnerSpace, Point2, Vector2, Zero};
 use std::{
 	collections::HashMap,
 	time::{Duration, Instant},
 };
-use winit::event_loop::ControlFlow;
-
-use crate::{
-	coords::{Dimensions, RectF},
-	game::Inputs,
-};
+use winit::event_loop::EventLoopWindowTarget;
 
 pub const DT_60: f32 = 1. / 60.;
 
@@ -261,15 +260,15 @@ impl World {
 		}
 	}
 
-	pub fn check_end(&self, control_flow: &mut ControlFlow) {
+	pub fn check_end(&self, evt_loop_target: &EventLoopWindowTarget<()>) {
 		if self.player.hp == 0 {
 			// Goofiest dead message
 			println!("Ur so dead 💀, RIP BOZO 🔫🔫😂😂😂😂");
-			*control_flow = ControlFlow::Exit;
+			evt_loop_target.exit();
 		}
 		if self.enemies.is_empty() && self.event_syst.events_clear() {
 			println!("You won! Score: {score}", score = self.score);
-			*control_flow = ControlFlow::Exit;
+			evt_loop_target.exit();
 		}
 	}
 
