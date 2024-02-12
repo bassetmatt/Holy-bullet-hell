@@ -73,7 +73,7 @@ pub fn create_window(event_loop: &EventLoop<()>) -> Window {
 		WindowBuilder::new()
 			.with_title("Holy Bullet Hell")
 			.with_inner_size(win_size)
-			.with_resizable(false)
+			.with_resizable(true)
 			.with_fullscreen(None)
 			.build(event_loop)
 			.unwrap()
@@ -132,12 +132,12 @@ impl FrameBuffer {
 	}
 }
 
-trait ResizableWindow {
-	fn change_window_size(&mut self, index: u8) -> PhysicalSize<u32>;
+pub trait ResizableWindow {
+	fn request_window_resize(&mut self, index: u8) -> PhysicalSize<u32>;
 }
 
 impl ResizableWindow for Window {
-	fn change_window_size(&mut self, index: u8) -> PhysicalSize<u32> {
+	fn request_window_resize(&mut self, index: u8) -> PhysicalSize<u32> {
 		// Last entry must be the screen size
 		if index == N_SIZES - 1 {
 			let fs = Fullscreen::Borderless(self.current_monitor());
@@ -146,10 +146,7 @@ impl ResizableWindow for Window {
 			self.set_fullscreen(None);
 		}
 		let size: PhysicalSize<u32> = DRAW_CONSTANTS.sizes[index as usize].into();
-		self
-			.request_inner_size(size)
-			.is_none()
-			.then(|| panic!("Failed to resize window"));
+		let _ = self.request_inner_size(size);
 		size
 	}
 }
@@ -159,11 +156,9 @@ impl Game {
 		self.window.request_redraw();
 	}
 
-	pub fn resize(&mut self) {
-		let index = self.infos.resolution_choice;
-		let new_size = self.window.change_window_size(index);
-		self.frame_buffer.resize_buffer(&new_size).unwrap();
-		self.infos.scale4 = 4 * new_size.width / DRAW_CONSTANTS.sizes[0].w;
+	pub fn resize(&mut self, size: &PhysicalSize<u32>) {
+		self.frame_buffer.resize_buffer(size).unwrap();
+		self.infos.scale4 = 4 * size.width / DRAW_CONSTANTS.sizes[0].w;
 	}
 
 	pub fn _toggle_fullscreen(&mut self) {

@@ -4,7 +4,10 @@ mod draw;
 mod game;
 mod gameplay;
 
-use crate::{draw::N_SIZES, game::Game};
+use crate::{
+	draw::{ResizableWindow, N_SIZES},
+	game::Game,
+};
 use smol_str::SmolStr;
 use std::time::{Duration, Instant};
 use winit::{
@@ -29,25 +32,27 @@ fn main() -> Result<(), EventLoopError> {
 				//TODO: Save game ?
 				evt_loop_target.exit();
 			},
-			// The window shouldn't be manually resized
-			WindowEvent::Resized(_) => {},
+			WindowEvent::Resized(size) => {
+				game.resize(size);
+			},
 			WindowEvent::KeyboardInput { event: KeyEvent { logical_key, state, .. }, .. } => {
 				use winit::keyboard::NamedKey::*;
 				if matches!(state, ElementState::Pressed) {
 					// TODO: Move these into a function
+					let res_choice = &mut game.infos.resolution_choice;
 					match logical_key {
 						Key::Named(Escape) => {
 							evt_loop_target.exit();
 						},
-						Key::Character(key) if key == &SmolStr::new("[") => {
-							game.infos.resolution_choice += 1;
-							game.infos.resolution_choice %= N_SIZES;
-							game.resize();
-						},
 						Key::Character(key) if key == &SmolStr::new("]") => {
-							game.infos.resolution_choice -= 1;
-							game.infos.resolution_choice %= N_SIZES;
-							game.resize();
+							*res_choice += 1;
+							*res_choice %= N_SIZES;
+							game.window.request_window_resize(*res_choice);
+						},
+						Key::Character(key) if key == &SmolStr::new("[") => {
+							*res_choice -= 1;
+							*res_choice %= N_SIZES;
+							game.window.request_window_resize(*res_choice);
 						},
 						_ => {},
 					}
