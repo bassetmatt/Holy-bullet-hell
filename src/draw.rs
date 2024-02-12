@@ -1,6 +1,10 @@
+use crate::{
+	coords::{Dimensions, Rect, RectI},
+	game::{Game, GlobalInfo},
+	gameplay::{Enemy, EnemyType, Player, ProjType, Projectile, World},
+};
 use cgmath::{Point2, Vector2};
 use image::{DynamicImage, GenericImageView, ImageFormat};
-use num::rational::Ratio;
 use pixels::{Pixels, SurfaceTexture, TextureError};
 use winit::{
 	dpi::PhysicalSize,
@@ -8,19 +12,14 @@ use winit::{
 	window::{Fullscreen, Window, WindowBuilder},
 };
 
-use crate::coords::{Dimensions, Rect, RectI};
-use crate::game::Game;
-use crate::gameplay::{Enemy, EnemyType, Player, ProjType, Projectile, World};
-
 struct DrawConstants {
 	interface_begin: f32,
-	sizes: [Dimensions<u32>; 4],
+	sizes: [Dimensions<u32>; 3],
 }
 
 const DRAW_CONSTANTS: DrawConstants = DrawConstants {
 	interface_begin: 0.75,
 	sizes: [
-		Dimensions { w: 960, h: 540 },
 		Dimensions { w: 1280, h: 720 },
 		Dimensions { w: 1600, h: 900 },
 		Dimensions { w: 1920, h: 1080 },
@@ -155,21 +154,16 @@ impl ResizableWindow for Window {
 	}
 }
 
-pub struct InterfaceInfos {
-	fps: f32,
-	scale: Ratio<u32>,
-}
-
 impl Game {
 	pub fn redraw(&mut self) {
 		self.window.request_redraw();
 	}
 
 	pub fn resize(&mut self) {
-		let index = self.options.resolution_choice;
+		let index = self.infos.resolution_choice;
 		let new_size = self.window.change_window_size(index);
 		self.frame_buffer.resize_buffer(&new_size).unwrap();
-		self.options.scale = Ratio::new(new_size.width, DRAW_CONSTANTS.sizes[0].w);
+		self.infos.scale4 = 4 * new_size.width / DRAW_CONSTANTS.sizes[0].w;
 	}
 
 	pub fn _toggle_fullscreen(&mut self) {
@@ -187,11 +181,7 @@ impl Game {
 		let world = &mut self.world.as_mut().unwrap();
 
 		world.draw_gameplay(&mut self.frame_buffer, &self.sheets);
-		world.draw_interface(
-			&mut self.frame_buffer,
-			&self.sheets,
-			InterfaceInfos { fps: self.infos.fps_info.fps as f32, scale: self.options.scale },
-		);
+		world.draw_interface(&mut self.frame_buffer, &self.sheets, &self.infos);
 	}
 
 	pub fn render(&mut self) {
@@ -368,7 +358,7 @@ impl RectI {
 impl Player {
 	fn sprite_coords(&self) -> SpriteCoords {
 		SpriteCoords {
-			sheet_pos: if self.hp_cd_over() { (1, 0) } else { (1, 1) }.into(),
+			sheet_pos: if self.immunity_over() { (1, 0) } else { (1, 1) }.into(),
 			dims: (8, 8).into(),
 		}
 	}
@@ -421,7 +411,7 @@ impl World {
 			frame_buffer,
 			&sheets.spritesheet,
 			player.sprite_coords_hit(),
-			Rect::from_float(player.pos, player.size_hit),
+			Rect::from_float(player.pos, player.hitbox.dims),
 			None,
 		);
 
@@ -466,12 +456,12 @@ impl World {
 		&self,
 		frame_buffer: &mut FrameBuffer,
 		sheets: &Sheets,
-		infos: InterfaceInfos,
+		infos: &GlobalInfo,
 	) {
 		let frame_buffer_dims = frame_buffer.dims;
 		let win_w = frame_buffer_dims.w as usize;
 		let interf_begin_x = (DRAW_CONSTANTS.interface_begin * win_w as f32) as usize;
-		let scale = infos.scale;
+		let scale4 = infos.scale4;
 		// Interface background
 		frame_buffer
 			.iter_pixel_mut()
@@ -486,9 +476,8 @@ impl World {
 				frame_buffer,
 				Rect {
 					top_left: (
-						interf_begin_x as i32
-							+ (scale * Ratio::from_integer(16 + 48 * i)).to_integer() as i32,
-						64 + (Ratio::from_integer(64) * scale).to_integer() as i32,
+						(interf_begin_x as u32 + (scale4 * (16 + 48 * i) / 4)) as i32,
+						(64 + (64 * scale4 / 4)) as i32,
 					)
 						.into(),
 					dims: (32, 32).into(),

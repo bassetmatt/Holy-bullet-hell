@@ -1,4 +1,3 @@
-use num::rational::Ratio;
 use smol_str::SmolStr;
 use std::{
 	fs,
@@ -25,35 +24,8 @@ enum GameState {
 
 enum MenuChoice {
 	_Play,
-	_Options(OptionChoice),
+	_Options,
 	_Quit,
-}
-
-enum OptionChoice {
-	_Resolution(u8),
-	_Fullscreen(bool),
-	_Back,
-}
-
-pub struct GameOptions {
-	pub resolution_choice: u8,
-	pub _fullscreen: bool,
-	pub scale: Ratio<u32>,
-}
-
-impl GameOptions {
-	fn new() -> GameOptions {
-		GameOptions {
-			resolution_choice: 1,
-			_fullscreen: false,
-			scale: Ratio::from_integer(1),
-		}
-	}
-
-	// ? May be used when using old options saved somewhere
-	fn _new_from_args(resolution_choice: u8, _fullscreen: bool, scale: Ratio<u32>) -> GameOptions {
-		GameOptions { resolution_choice, _fullscreen, scale }
-	}
 }
 
 struct Level {
@@ -137,16 +109,16 @@ impl Inputs {
 	}
 }
 
-pub struct FpsCounter {
-	pub fps: u32,
-	cooldown: Cooldown,
-}
-
 pub struct GlobalInfo {
 	_game_begin: Instant,
 	_level_begin: Option<Instant>,
 	frame_count: u64,
-	pub fps_info: FpsCounter,
+	pub fps: u32,
+	fps_cooldown: Cooldown,
+	pub resolution_choice: u8,
+	pub _fullscreen: bool,
+	/// Four times the scaling factor to avoid floating point operations
+	pub scale4: u32,
 }
 
 impl GlobalInfo {
@@ -155,10 +127,11 @@ impl GlobalInfo {
 			_game_begin: Instant::now(),
 			_level_begin: None,
 			frame_count: 0,
-			fps_info: FpsCounter {
-				fps: 0,
-				cooldown: Cooldown::with_duration(Duration::from_millis(100)),
-			},
+			fps: 0,
+			fps_cooldown: Cooldown::with_secs(0.1),
+			resolution_choice: 0,
+			_fullscreen: false,
+			scale4: 4,
 		}
 	}
 
@@ -181,14 +154,13 @@ impl GlobalInfo {
 
 pub struct Game {
 	_state: GameState,
-	pub options: GameOptions,
 	pub world: Option<World>,
-	levels: Vec<Level>,
 	inputs: Inputs,
-	pub infos: GlobalInfo,
 	pub window: Window,
 	pub frame_buffer: FrameBuffer,
 	pub sheets: Sheets,
+	levels: Vec<Level>,
+	pub infos: GlobalInfo,
 }
 
 impl Game {
@@ -197,7 +169,6 @@ impl Game {
 		let window = create_window(event_loop);
 		Game {
 			_state: GameState::_Playing,
-			options: GameOptions::new(),
 			world: None,
 			levels: vec![],
 			inputs: Inputs::new(),
@@ -223,6 +194,7 @@ impl Game {
 
 	pub fn process_input(&mut self, state: &ElementState, key: &Key) {
 		use winit::keyboard::NamedKey::*;
+		// TODO: Some day, use data structures for keys
 		match key {
 			Key::Named(ArrowUp) => self.inputs.up = matches!(state, ElementState::Pressed),
 			Key::Named(ArrowDown) => self.inputs.down = matches!(state, ElementState::Pressed),
@@ -245,7 +217,7 @@ impl Game {
 		self.world = Some(new_world);
 	}
 
-	pub fn tick(&mut self, dt: Duration, control_flow: &EventLoopWindowTarget<()>) {
+	pub fn tick(&mut self, dt: Duration, evt_loop_target: &EventLoopWindowTarget<()>) {
 		let world = &mut self.world.as_mut().unwrap();
 		// Applying events
 		world.process_events();
@@ -254,14 +226,13 @@ impl Game {
 		// Projectiles physics
 		world.update_projectiles(dt);
 		// Checks end condition
-		world.check_end(control_flow);
+		world.check_end(evt_loop_target);
 	}
 	pub fn update_fps(&mut self, dt: Duration) {
 		// Limit fps refresh for it to be readable
-		let fps_infos = &mut self.infos.fps_info;
-		if fps_infos.cooldown.is_over() {
-			fps_infos.fps = (1. / dt.as_secs_f64()).round() as u32;
-			fps_infos.cooldown.emit();
+		if self.infos.fps_cooldown.is_over() {
+			self.infos.fps = (1. / dt.as_secs_f64()).round() as u32;
+			self.infos.fps_cooldown.emit();
 		}
 	}
 }

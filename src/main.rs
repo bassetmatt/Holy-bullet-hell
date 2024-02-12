@@ -40,13 +40,13 @@ fn main() -> Result<(), EventLoopError> {
 							evt_loop_target.exit();
 						},
 						Key::Character(key) if key == &SmolStr::new("[") => {
-							game.options.resolution_choice += 1;
-							game.options.resolution_choice %= N_SIZES;
+							game.infos.resolution_choice += 1;
+							game.infos.resolution_choice %= N_SIZES;
 							game.resize();
 						},
 						Key::Character(key) if key == &SmolStr::new("]") => {
-							game.options.resolution_choice -= 1;
-							game.options.resolution_choice %= N_SIZES;
+							game.infos.resolution_choice -= 1;
+							game.infos.resolution_choice %= N_SIZES;
 							game.resize();
 						},
 						_ => {},

@@ -1,5 +1,5 @@
 use crate::{
-	coords::{Dimensions, RectF},
+	coords::{Dimensions, PhysicalBox, RectF},
 	game::Inputs,
 };
 use cgmath::{InnerSpace, Point2, Vector2, Zero};
@@ -18,9 +18,11 @@ pub struct Cooldown {
 
 impl Cooldown {
 	/// Creates cooldown with secs second duration
-	fn with_secs(secs: f32) -> Self {
+	pub fn with_secs(secs: f32) -> Self {
 		Cooldown { last_emit: None, cooldown: Duration::from_secs_f32(secs) }
 	}
+
+	#[allow(dead_code)]
 	pub fn with_duration(value: Duration) -> Self {
 		Cooldown { last_emit: None, cooldown: value }
 	}
@@ -41,27 +43,27 @@ pub struct Player {
 	pub pos: Point2<f32>,
 	vel: Vector2<f32>,
 	pub size: Dimensions<f32>,
-	pub size_hit: Dimensions<f32>,
+	pub hitbox: PhysicalBox,
 	pub hp: u32,
-	hp_cd: Cooldown,
-	proj_cd: Cooldown,
+	immunity: Cooldown,
+	new_shoot: Cooldown,
 }
 
 impl Player {
 	fn new() -> Self {
 		Self {
 			pos: (75., 200.).into(),
+			hitbox: PhysicalBox { center: (75., 200.).into(), dims: (12., 12.).into() },
 			vel: (0., 0.).into(),
 			size: Dimensions { w: 48., h: 48. },
-			size_hit: Dimensions { w: 10., h: 10. },
 			hp: 5,
-			hp_cd: Cooldown::with_secs(2.),
-			proj_cd: Cooldown::with_secs(15. * DT_60),
+			immunity: Cooldown::with_secs(2.),
+			new_shoot: Cooldown::with_secs(15. * DT_60),
 		}
 	}
 
-	pub fn hp_cd_over(&self) -> bool {
-		self.hp_cd.is_over()
+	pub fn immunity_over(&self) -> bool {
+		self.immunity.is_over()
 	}
 
 	fn update_pos(&mut self, inputs: &Inputs, bounds: RectF, dt: f32) {
@@ -90,6 +92,7 @@ impl Player {
 			if 0. <= new_pos.y && new_pos.y <= bounds.dims.h {
 				self.pos.y = new_pos.y;
 			}
+			self.hitbox.center = self.pos;
 		}
 	}
 }
@@ -311,14 +314,14 @@ impl World {
 		let player = &mut self.player;
 		player.update_pos(inputs, self.rect, dt.as_secs_f32());
 		// Player shoot
-		if inputs.shoot & player.proj_cd.is_over() {
+		if inputs.shoot & player.new_shoot.is_over() {
 			let proj = Projectile {
 				pos: player.pos - player.size.h / 2. * Vector2::unit_y(),
 				vel: Vector2::unit_y() * -10.,
 				variant: ProjType::PlayerShoot,
 			};
 			self.projectiles.push(proj);
-			player.proj_cd.last_emit = Some(Instant::now());
+			player.new_shoot.last_emit = Some(Instant::now());
 		}
 
 		// Enemies physics
@@ -383,11 +386,11 @@ impl World {
 					}
 				}
 			}
-			if player.hp_cd.is_over()
+			if player.immunity.is_over()
 				& collide_rectangle(
 					player.pos,
 					proj.pos,
-					player.size_hit,
+					player.hitbox.dims,
 					Dimensions { w: 10., h: 10. },
 				) & !matches!(proj.variant, ProjType::PlayerShoot)
 			{
@@ -399,7 +402,7 @@ impl World {
 				}
 				to_remove.push(i);
 
-				player.hp_cd.last_emit = Some(Instant::now());
+				player.immunity.last_emit = Some(Instant::now());
 			}
 		}
 		for i in to_remove.into_iter().rev() {

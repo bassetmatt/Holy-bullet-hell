@@ -1,8 +1,10 @@
 use cgmath::Point2;
 use num::{NumCast, Zero};
 use std::{
+	cmp::PartialOrd,
 	convert::{From, Into},
 	fmt::Debug,
+	ops::Add,
 };
 use winit::dpi::PhysicalSize;
 
@@ -75,7 +77,7 @@ pub type RectU = Rect<u32>;
 
 impl<T> Rect<T>
 where
-	T: Copy + std::ops::Add<Output = T> + std::cmp::PartialOrd,
+	T: Copy + Add<Output = T> + PartialOrd,
 {
 	fn top(self) -> T {
 		self.top_left.y
@@ -143,5 +145,34 @@ impl Iterator for IterPointRect {
 		} else {
 			None
 		}
+	}
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PhysicalBox {
+	pub center: Point2<f32>,
+	pub dims: Dimensions<f32>,
+}
+
+#[allow(dead_code)]
+impl PhysicalBox {
+	fn top(self) -> f32 {
+		self.center.y - (self.dims.h / 2.)
+	}
+	fn left(self) -> f32 {
+		self.center.x - (self.dims.w / 2.)
+	}
+	fn bottom(self) -> f32 {
+		self.center.y + (self.dims.h / 2.)
+	}
+	fn right(self) -> f32 {
+		self.center.x + (self.dims.w / 2.)
+	}
+
+	pub fn contains(self, coords: Point2<f32>) -> bool {
+		self.left() <= coords.x
+			&& coords.x < self.right()
+			&& self.top() <= coords.y
+			&& coords.y < self.bottom()
 	}
 }
