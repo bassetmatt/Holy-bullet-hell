@@ -471,11 +471,11 @@ impl World {
 				frame_buffer,
 				Rect {
 					top_left: (
-						(interf_begin_x as u32 + (scale4 * (16 + 48 * i) / 4)) as i32,
-						(64 + (64 * scale4 / 4)) as i32,
+						(interf_begin_x as u32 + (scale4 * (20 + 60 * i) / 4)) as i32,
+						60,
 					)
 						.into(),
-					dims: (32, 32).into(),
+					dims: (40 * scale4 as i32 / 4, 40 * scale4 as i32 / 4).into(),
 				},
 				[0x11, 0x81, 0x0c, 0xff],
 			)
