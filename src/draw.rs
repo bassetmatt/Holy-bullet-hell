@@ -1,6 +1,7 @@
 use cgmath::{Point2, Vector2};
 use image::{DynamicImage, GenericImageView, ImageFormat};
-use pixels::{Pixels, SurfaceTexture};
+use num::rational::Ratio;
+use pixels::{Pixels, SurfaceTexture, TextureError};
 use winit::dpi::PhysicalSize;
 use winit::event_loop::EventLoop;
 use winit::window::{Fullscreen, Window, WindowBuilder};
@@ -10,8 +11,30 @@ use crate::game::Game;
 use crate::gameplay::World;
 use crate::gameplay::{Enemy, EnemyType, Player, ProjType, Projectile};
 
-pub const BG_COLOR: [u8; 4] = [0x08, 0x0b, 0x1e, 0xff];
-const BG_COLOR_UI: [u8; 4] = [0x20, 0x11, 0x38, 0xff];
+struct DrawConstants {
+	interface_begin: f32,
+	sizes: [Dimensions<u32>; 4],
+}
+
+const DRAW_CONSTANTS: DrawConstants = DrawConstants {
+	interface_begin: 0.75,
+	sizes: [
+		Dimensions { w: 960, h: 540 },
+		Dimensions { w: 1280, h: 720 },
+		Dimensions { w: 1600, h: 900 },
+		Dimensions { w: 1920, h: 1080 },
+	],
+};
+
+pub const N_SIZES: u8 = DRAW_CONSTANTS.sizes.len() as u8;
+
+struct ColorPalette {
+	bg: [u8; 4],
+	bg_ui: [u8; 4],
+}
+
+const COLORS: ColorPalette =
+	ColorPalette { bg: [0x08, 0x0b, 0x1e, 0xff], bg_ui: [0x20, 0x11, 0x38, 0xff] };
 
 pub struct Sheets {
 	font: DynamicImage,
@@ -44,32 +67,19 @@ pub fn conv_srgb_to_linear(x: f64) -> f64 {
 	}
 }
 
-const SIZES: [Dimensions<u32>; 5] = [
-	Dimensions { w: 640, h: 360 },
-	Dimensions { w: 960, h: 540 },
-	Dimensions { w: 1280, h: 720 },
-	Dimensions { w: 1600, h: 900 },
-	Dimensions { w: 1920, h: 1080 },
-];
-pub const N_SIZES: usize = SIZES.len();
-
 pub fn create_window(event_loop: &EventLoop<()>) -> Window {
 	let window = {
-		let win_size = PhysicalSize::new(SIZES[2].w, SIZES[2].h);
+		let win_size = PhysicalSize::new(DRAW_CONSTANTS.sizes[1].w, DRAW_CONSTANTS.sizes[1].h);
 		WindowBuilder::new()
 			.with_title("Holy Bullet Hell")
 			.with_inner_size(win_size)
+			.with_resizable(false)
 			.with_fullscreen(None)
 			.build(event_loop)
 			.unwrap()
 	};
-	// Centers the window
-	let screen_size = window.available_monitors().next().unwrap().size();
-	let window_outer_size = window.outer_size();
-	window.set_outer_position(winit::dpi::PhysicalPosition::new(
-		screen_size.width / 2 - window_outer_size.width / 2,
-		screen_size.height / 2 - window_outer_size.height / 2,
-	));
+	// Window is on the top left corner
+	window.set_outer_position(winit::dpi::PhysicalPosition::new(0, 0));
 	window
 }
 
@@ -83,10 +93,10 @@ impl FrameBuffer {
 		let dims: Dimensions<u32> = window.inner_size().into();
 		let bg_color_wgpu: pixels::wgpu::Color = {
 			pixels::wgpu::Color {
-				r: conv_srgb_to_linear(BG_COLOR[0] as f64 / 255.0),
-				g: conv_srgb_to_linear(BG_COLOR[1] as f64 / 255.0),
-				b: conv_srgb_to_linear(BG_COLOR[2] as f64 / 255.0),
-				a: conv_srgb_to_linear(BG_COLOR[3] as f64 / 255.0),
+				r: conv_srgb_to_linear(COLORS.bg[0] as f64 / 255.0),
+				g: conv_srgb_to_linear(COLORS.bg[1] as f64 / 255.0),
+				b: conv_srgb_to_linear(COLORS.bg[2] as f64 / 255.0),
+				a: conv_srgb_to_linear(COLORS.bg[3] as f64 / 255.0),
 			}
 		};
 		let buffer = {
@@ -98,6 +108,52 @@ impl FrameBuffer {
 		};
 		FrameBuffer { buffer, dims }
 	}
+
+	fn resize_buffer(&mut self, size: &PhysicalSize<u32>) -> Result<(), TextureError> {
+		// Resize the window surface
+		self.buffer.resize_surface(size.width, size.height)?;
+		// Resize the pixel buffer
+		self.buffer.resize_buffer(size.width, size.height)?;
+		// Update the dimensions
+		self.dims = (*size).into();
+		Ok(())
+	}
+
+	fn fill_with_color(&mut self, color: [u8; 4]) {
+		self
+			.buffer
+			.frame_mut()
+			.chunks_exact_mut(4)
+			.for_each(|pixel| pixel.copy_from_slice(&color));
+	}
+
+	fn iter_pixel_mut(&mut self) -> impl Iterator<Item = &mut [u8]> {
+		self.buffer.frame_mut().chunks_exact_mut(4)
+	}
+}
+
+trait ResizableWindow {
+	fn change_window_size(&mut self, index: u8) -> PhysicalSize<u32>;
+}
+
+impl ResizableWindow for Window {
+	fn change_window_size(&mut self, index: u8) -> PhysicalSize<u32> {
+		// Last entry must be the screen size
+		if index == N_SIZES - 1 {
+			let fs = Fullscreen::Borderless(self.current_monitor());
+			self.set_fullscreen(Some(fs));
+		} else {
+			self.set_fullscreen(None);
+		}
+		let size: PhysicalSize<u32> = DRAW_CONSTANTS.sizes[index as usize].into();
+		self.set_inner_size(size);
+		size
+	}
+}
+
+pub struct InterfaceInfos {
+	fps: f32,
+	scale: Ratio<u32>,
 }
 
 impl Game {
@@ -105,31 +161,11 @@ impl Game {
 		self.window.request_redraw();
 	}
 
-	pub fn resize(&mut self, size: &PhysicalSize<u32>) {
-		let buf = &mut self.frame_buffer.buffer;
-		// Resize the window surface
-		buf.resize_surface(size.width, size.height).unwrap();
-		// Resize the pixel buffer
-		buf.resize_buffer(size.width, size.height).unwrap();
-		// Update the dimensions
-		self.frame_buffer.dims = self.window.inner_size().into();
-	}
-
-	pub fn cycle_window_size(&mut self) {
-		// Last entry must be the screen size
-		let index = self.options.resolution_choice as usize;
-		if index == N_SIZES - 1 {
-			self
-				.window
-				.set_fullscreen(Some(winit::window::Fullscreen::Borderless(
-					self.window.current_monitor(),
-				)));
-		} else {
-			self.window.set_fullscreen(None);
-		}
-		self
-			.window
-			.set_inner_size(winit::dpi::LogicalSize::new(SIZES[index].w, SIZES[index].h));
+	pub fn resize(&mut self) {
+		let index = self.options.resolution_choice;
+		let new_size = self.window.change_window_size(index);
+		self.frame_buffer.resize_buffer(&new_size).unwrap();
+		self.options.scale = Ratio::new(new_size.width, DRAW_CONSTANTS.sizes[0].w);
 	}
 
 	pub fn _toggle_fullscreen(&mut self) {
@@ -143,19 +179,14 @@ impl Game {
 	}
 
 	pub fn draw_in_game(&mut self) {
+		self.frame_buffer.fill_with_color(COLORS.bg);
 		let world = &mut self.world.as_mut().unwrap();
-		self
-			.frame_buffer
-			.buffer
-			.frame_mut()
-			.chunks_exact_mut(4)
-			.for_each(|pixel| pixel.copy_from_slice(&BG_COLOR));
 
 		world.draw_gameplay(&mut self.frame_buffer, &self.sheets);
 		world.draw_interface(
 			&mut self.frame_buffer,
 			&self.sheets,
-			self.infos.fps_info.fps,
+			InterfaceInfos { fps: self.infos.fps_info.fps as f32, scale: self.options.scale },
 		);
 	}
 
@@ -171,31 +202,31 @@ macro_rules! opacity {
 }
 
 // TODO: Change arguments to FrameBuffer
-pub fn draw_rect(
-	pixel_buffer: &mut pixels::Pixels,
-	pixel_buffer_dims: Dimensions<u32>,
-	dst: RectI,
-	mut color: [u8; 4],
-) {
+pub fn draw_rect(frame_buffer: &mut FrameBuffer, dst: RectI, mut color: [u8; 4]) {
+	let frame_buffer_dims = frame_buffer.dims;
 	// Transparent
 	if color[3] == 0x00 {
 		return;
 	}
-	let window = pixel_buffer_dims.into_rect();
+	let window = frame_buffer_dims.into_rect();
 	for coords in dst.iter() {
 		if window.contains(coords) {
-			let pixel_index = coords.y * pixel_buffer_dims.w as i32 + coords.x;
+			let pixel_index = coords.y * frame_buffer_dims.w as i32 + coords.x;
 			let pixel_byte_index = pixel_index as usize * 4;
 			let pixel_bytes = pixel_byte_index..(pixel_byte_index + 4);
 			if color[3] != 0xff {
-				let old_color = pixel_buffer.frame_mut().get(pixel_bytes.clone()).unwrap();
+				let old_color = frame_buffer
+					.buffer
+					.frame_mut()
+					.get(pixel_bytes.clone())
+					.unwrap();
 				let alpha = color[3] as f32 / 255.;
 				color[0] = opacity!(color, old_color, alpha, 0);
 				color[1] = opacity!(color, old_color, alpha, 1);
 				color[2] = opacity!(color, old_color, alpha, 2);
 				color[3] = 0xff;
 			}
-			pixel_buffer.frame_mut()[pixel_bytes].copy_from_slice(&color);
+			frame_buffer.buffer.frame_mut()[pixel_bytes].copy_from_slice(&color);
 		}
 	}
 }
@@ -228,10 +259,8 @@ struct SpriteCoords {
 	dims: Dimensions<u32>,
 }
 
-// TODO: Change arguments to FrameBuffer
 fn draw_text(
-	frame_buffer: &mut pixels::Pixels,
-	frame_buffer_dims: Dimensions<u32>,
+	frame_buffer: &mut FrameBuffer,
 	font_sheet: &DynamicImage,
 	dst: RectI,
 	color: [u8; 4],
@@ -253,7 +282,6 @@ fn draw_text(
 		let dst_c = Rect { top_left, dims: char_dims };
 		draw_sprite(
 			frame_buffer,
-			frame_buffer_dims,
 			font_sheet,
 			SpriteCoords { sheet_pos: char_position(c).unwrap().into(), dims: (4, 6).into() },
 			dst_c,
@@ -262,15 +290,14 @@ fn draw_text(
 	}
 }
 
-// TODO: Change arguments to FrameBuffer
 fn draw_sprite(
-	frame_buffer: &mut pixels::Pixels,
-	frame_buffer_dims: Dimensions<u32>,
+	frame_buffer: &mut FrameBuffer,
 	sheet: &DynamicImage,
 	SpriteCoords { sheet_pos, dims }: SpriteCoords,
 	dst: RectI,
 	color: Option<[u8; 4]>,
 ) {
+	let frame_buffer_dims = frame_buffer.dims;
 	let window = Rect {
 		top_left: (0, 0).into(),
 		dims: frame_buffer_dims.into_dim::<i32>(),
@@ -297,14 +324,18 @@ fn draw_sprite(
 			Some(col) => col,
 		};
 		if px[3] != 0xff {
-			let background = frame_buffer.frame_mut().get(pixel_bytes.clone()).unwrap();
+			let background = frame_buffer
+				.buffer
+				.frame_mut()
+				.get(pixel_bytes.clone())
+				.unwrap();
 			let alpha = px[3] as f32 / 255.;
 			px[0] = opacity!(px, background, alpha, 0);
 			px[1] = opacity!(px, background, alpha, 1);
 			px[2] = opacity!(px, background, alpha, 2);
 			px[3] = 0xff;
 		}
-		frame_buffer.frame_mut()[pixel_bytes].copy_from_slice(&px);
+		frame_buffer.buffer.frame_mut()[pixel_bytes].copy_from_slice(&px);
 	}
 }
 
@@ -372,19 +403,10 @@ impl Projectile {
 
 impl World {
 	pub fn draw_gameplay(&self, frame_buffer: &mut FrameBuffer, sheets: &Sheets) {
-		let frame_buffer_dims = frame_buffer.dims;
-		let frame_buffer = &mut frame_buffer.buffer;
-		// Draws Background
-		frame_buffer
-			.frame_mut()
-			.chunks_exact_mut(4)
-			.for_each(|pixel| pixel.copy_from_slice(&BG_COLOR));
-
 		// Player
 		let player = &self.player;
 		draw_sprite(
 			frame_buffer,
-			frame_buffer_dims,
 			&sheets.spritesheet,
 			player.sprite_coords(),
 			Rect::from_float(player.pos, player.size),
@@ -393,7 +415,6 @@ impl World {
 		// Player hitbox
 		draw_sprite(
 			frame_buffer,
-			frame_buffer_dims,
 			&sheets.spritesheet,
 			player.sprite_coords_hit(),
 			Rect::from_float(player.pos, player.size_hit),
@@ -404,7 +425,6 @@ impl World {
 		for enemy in self.enemies.iter() {
 			draw_sprite(
 				frame_buffer,
-				frame_buffer_dims,
 				&sheets.spritesheet,
 				enemy.sprite_coords(),
 				Rect::from_float(enemy.pos, enemy.size),
@@ -412,13 +432,11 @@ impl World {
 			);
 			draw_rect(
 				frame_buffer,
-				frame_buffer_dims,
 				Rect::life_bar_full(enemy.pos, enemy.size),
 				[0xff, 0x00, 0x00, 0xff],
 			);
 			draw_rect(
 				frame_buffer,
-				frame_buffer_dims,
 				Rect::life_bar(
 					enemy.pos,
 					enemy.size,
@@ -432,7 +450,6 @@ impl World {
 		for proj in self.projectiles.iter() {
 			draw_sprite(
 				frame_buffer,
-				frame_buffer_dims,
 				&sheets.spritesheet,
 				proj.sprite_coords(),
 				Rect::from_float(proj.pos, Dimensions { w: 10., h: 10. }),
@@ -441,27 +458,35 @@ impl World {
 		}
 	}
 
-	pub fn draw_interface(&self, frame_buffer: &mut FrameBuffer, sheets: &Sheets, fps: u32) {
+	pub fn draw_interface(
+		&self,
+		frame_buffer: &mut FrameBuffer,
+		sheets: &Sheets,
+		infos: InterfaceInfos,
+	) {
 		let frame_buffer_dims = frame_buffer.dims;
-		let frame_buffer = &mut frame_buffer.buffer;
-		let win_w = frame_buffer_dims.w;
-		let interf_begin_x = (0.8 * win_w as f32) as usize;
+		let win_w = frame_buffer_dims.w as usize;
+		let interf_begin_x = (DRAW_CONSTANTS.interface_begin * win_w as f32) as usize;
+		let scale = infos.scale;
 		// Interface background
 		frame_buffer
-			.frame_mut()
-			.chunks_exact_mut(4)
+			.iter_pixel_mut()
 			.enumerate()
 			.for_each(|(i, pixel)| {
-				if i % frame_buffer_dims.w as usize > interf_begin_x {
-					pixel.copy_from_slice(&BG_COLOR_UI)
+				if i % win_w > interf_begin_x {
+					pixel.copy_from_slice(&COLORS.bg_ui)
 				}
 			});
 		for i in 0..self.player.hp {
 			draw_rect(
 				frame_buffer,
-				frame_buffer_dims,
 				Rect {
-					top_left: (interf_begin_x as i32 + 16 + 48 * i as i32, 256).into(),
+					top_left: (
+						interf_begin_x as i32
+							+ (scale * Ratio::from_integer(16 + 48 * i)).to_integer() as i32,
+						64 + (Ratio::from_integer(64) * scale).to_integer() as i32,
+					)
+						.into(),
 					dims: (32, 32).into(),
 				},
 				[0x11, 0x81, 0x0c, 0xff],
@@ -471,7 +496,6 @@ impl World {
 		let s = "LEVEL 1";
 		draw_text(
 			frame_buffer,
-			frame_buffer_dims,
 			&sheets.font,
 			Rect {
 				top_left: (interf_begin_x as i32 + 16, 128).into(),
@@ -485,7 +509,6 @@ impl World {
 		let text_dims = Dimensions { w: score_str.len() as i32 * 4 * 5, h: 6 * 5 };
 		draw_text(
 			frame_buffer,
-			frame_buffer_dims,
 			&sheets.font,
 			Rect {
 				top_left: (win_w as i32 - text_dims.w, 40).into(),
@@ -495,11 +518,10 @@ impl World {
 			&score_str,
 		);
 
-		let fps_str = format!("FPS: {fps:3}", fps = fps);
+		let fps_str = format!("FPS: {fps:3}", fps = infos.fps);
 		let text_dims = Dimensions { w: fps_str.len() as i32 * 4 * 5, h: 6 * 5 };
 		draw_text(
 			frame_buffer,
-			frame_buffer_dims,
 			&sheets.font,
 			Rect { top_left: (win_w as i32 - text_dims.w, 0).into(), dims: text_dims },
 			[0xff, 0xff, 0xff, 0xb0],

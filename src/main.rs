@@ -26,28 +26,27 @@ fn main() -> Result<(), Error> {
 				//TODO: Save game ?
 				*control_flow = ControlFlow::Exit;
 			},
-			// TODO: Don't allow manual resizing, only in the menu
-			WindowEvent::Resized(size) => game.resize(size),
+			// The window shouldn't be manually resized
+			WindowEvent::Resized(_) => {},
 			WindowEvent::KeyboardInput {
 				input: KeyboardInput { state, virtual_keycode: Some(key), .. },
 				..
 			} => {
 				if matches!(state, ElementState::Pressed) {
+					// TODO: Move these into a function
 					match key {
 						VirtualKeyCode::Escape => {
 							*control_flow = ControlFlow::Exit;
 						},
 						VirtualKeyCode::Plus => {
 							game.options.resolution_choice += 1;
-							game.options.resolution_choice %= N_SIZES as u8;
-							game.cycle_window_size();
-							game.resize(&game.window.inner_size());
+							game.options.resolution_choice %= N_SIZES;
+							game.resize();
 						},
 						VirtualKeyCode::Minus => {
 							game.options.resolution_choice -= 1;
-							game.options.resolution_choice %= N_SIZES as u8;
-							game.cycle_window_size();
-							game.resize(&game.window.inner_size());
+							game.options.resolution_choice %= N_SIZES;
+							game.resize();
 						},
 						_ => {},
 					}

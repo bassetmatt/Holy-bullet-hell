@@ -1,3 +1,4 @@
+use num::rational::Ratio;
 use std::{
 	fs,
 	path::Path,
@@ -35,16 +36,21 @@ enum OptionChoice {
 pub struct GameOptions {
 	pub resolution_choice: u8,
 	pub _fullscreen: bool,
+	pub scale: Ratio<u32>,
 }
 
 impl GameOptions {
 	fn new() -> GameOptions {
-		GameOptions { resolution_choice: 2, _fullscreen: false }
+		GameOptions {
+			resolution_choice: 1,
+			_fullscreen: false,
+			scale: Ratio::from_integer(1),
+		}
 	}
 
 	// ? May be used when using old options saved somewhere
-	fn _new_from_args(resolution_choice: u8, _fullscreen: bool) -> GameOptions {
-		GameOptions { resolution_choice, _fullscreen }
+	fn _new_from_args(resolution_choice: u8, _fullscreen: bool, scale: Ratio<u32>) -> GameOptions {
+		GameOptions { resolution_choice, _fullscreen, scale }
 	}
 }
 

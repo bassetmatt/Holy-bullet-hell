@@ -44,18 +44,23 @@ macro_rules! into_rect_impl {
 into_rect_impl!(u32, i32);
 into_rect_impl!(f32, f32);
 
-macro_rules! dim_to_physical_size {
+macro_rules! dim_physical_size_equivalent {
 	($type: ty) => {
 		impl From<PhysicalSize<u32>> for Dimensions<$type> {
 			fn from(size: PhysicalSize<u32>) -> Dimensions<$type> {
 				Dimensions { w: size.width as $type, h: size.height as $type }
 			}
 		}
+		impl From<Dimensions<$type>> for PhysicalSize<u32> {
+			fn from(size: Dimensions<$type>) -> PhysicalSize<u32> {
+				PhysicalSize { width: size.w as u32, height: size.h as u32 }
+			}
+		}
 	};
 }
 
-dim_to_physical_size!(u32);
-dim_to_physical_size!(i32);
+dim_physical_size_equivalent!(u32);
+dim_physical_size_equivalent!(i32);
 
 #[derive(Clone, Copy)]
 pub struct Rect<T: Copy> {
