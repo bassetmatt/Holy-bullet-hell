@@ -79,26 +79,43 @@ impl<T> Rect<T>
 where
 	T: Copy + Add<Output = T> + PartialOrd,
 {
-	fn top(self) -> T {
+	fn top(&self) -> T {
 		self.top_left.y
 	}
-	fn left(self) -> T {
+	fn left(&self) -> T {
 		self.top_left.x
 	}
-	fn bottom_excluded(self) -> T {
+	fn bottom_excluded(&self) -> T {
 		self.top_left.y + self.dims.h
 	}
-	fn right_excluded(self) -> T {
+	fn right_excluded(&self) -> T {
 		self.top_left.x + self.dims.w
 	}
 
-	pub fn contains(self, coords: Point2<T>) -> bool {
+	pub fn contains(&self, coords: Point2<T>) -> bool {
 		self.left() <= coords.x
 			&& coords.x < self.right_excluded()
 			&& self.top() <= coords.y
 			&& coords.y < self.bottom_excluded()
 	}
 }
+
+macro_rules! apply_interface_int {
+	($type: ty) => {
+		impl Rect<$type> {
+			pub fn to_interface(mut self, interface_begin: $type, scale4: $type) -> Self {
+				self.top_left.x = scale4 * self.top_left.x / 4 + interface_begin;
+				self.top_left.y = scale4 * self.top_left.y / 4;
+				self.dims.w = scale4 * self.dims.w / 4;
+				self.dims.h = scale4 * self.dims.h / 4;
+				self
+			}
+		}
+	};
+}
+
+apply_interface_int!(i32);
+apply_interface_int!(u32);
 
 impl RectI {
 	pub fn from_float(pos: Point2<f32>, dims: Dimensions<f32>) -> RectI {
@@ -114,7 +131,7 @@ impl RectI {
 		IterPointRect::with_rect(self)
 	}
 
-	fn _iter_dims(self) -> IterPointRect {
+	fn _iter_dims(&self) -> IterPointRect {
 		let rect = Rect { top_left: (0, 0).into(), dims: self.dims };
 		IterPointRect::with_rect(rect)
 	}
@@ -156,20 +173,20 @@ pub struct PhysicalBox {
 
 #[allow(dead_code)]
 impl PhysicalBox {
-	fn top(self) -> f32 {
+	fn top(&self) -> f32 {
 		self.center.y - (self.dims.h / 2.)
 	}
-	fn left(self) -> f32 {
+	fn left(&self) -> f32 {
 		self.center.x - (self.dims.w / 2.)
 	}
-	fn bottom(self) -> f32 {
+	fn bottom(&self) -> f32 {
 		self.center.y + (self.dims.h / 2.)
 	}
-	fn right(self) -> f32 {
+	fn right(&self) -> f32 {
 		self.center.x + (self.dims.w / 2.)
 	}
 
-	pub fn contains(self, coords: Point2<f32>) -> bool {
+	pub fn contains(&self, coords: Point2<f32>) -> bool {
 		self.left() <= coords.x
 			&& coords.x < self.right()
 			&& self.top() <= coords.y
