@@ -21,12 +21,15 @@ impl<T: Copy> From<(T, T)> for Dimensions<T> {
 }
 
 impl<T: Copy + NumCast> Dimensions<T> {
-	pub fn into_dim<V>(self) -> Dimensions<V>
-	where
-		V: Copy + NumCast,
-	{
+	pub fn into_dim<V: Copy + NumCast>(self) -> Dimensions<V> {
 		Dimensions { w: num::cast(self.w).unwrap(), h: num::cast(self.h).unwrap() }
 	}
+}
+
+/// Creates a Dimension object for text rendering
+pub fn text_box(str_len: usize, scale: u32) -> Dimensions<i32> {
+	use crate::draw::CHAR_DIMS;
+	Dimensions { w: str_len as u32 * CHAR_DIMS.w * scale, h: CHAR_DIMS.h * scale }.into_dim()
 }
 
 macro_rules! into_rect_impl {
@@ -103,7 +106,9 @@ where
 macro_rules! apply_interface_int {
 	($type: ty) => {
 		impl Rect<$type> {
-			pub fn to_interface(mut self, interface_begin: $type, scale4: $type) -> Self {
+			/// Takes a rectangle with top left at the beginning of the interface and translates+resizes it
+			pub fn to_interface(mut self, interface_begin: $type, scale4: u32) -> Self {
+				let scale4 = scale4 as $type;
 				self.top_left.x = scale4 * self.top_left.x / 4 + interface_begin;
 				self.top_left.y = scale4 * self.top_left.y / 4;
 				self.dims.w = scale4 * self.dims.w / 4;

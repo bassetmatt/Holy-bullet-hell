@@ -1,5 +1,5 @@
 use crate::{
-	coords::{Dimensions, Rect, RectI},
+	coords::{text_box, Dimensions, Rect, RectI},
 	game::{Game, GlobalInfo},
 	gameplay::{Enemy, EnemyType, Player, ProjType, Projectile, World},
 };
@@ -13,12 +13,12 @@ use winit::{
 };
 
 struct DrawConstants {
-	interface_begin: f32,
+	interface_begin4: u32,
 	sizes: [Dimensions<u32>; 3],
 }
 
 const DRAW_CONSTANTS: DrawConstants = DrawConstants {
-	interface_begin: 0.75,
+	interface_begin4: 3,
 	sizes: [
 		Dimensions { w: 1280, h: 720 },
 		Dimensions { w: 1600, h: 900 },
@@ -53,6 +53,8 @@ impl Sheets {
 		Sheets { font, spritesheet }
 	}
 }
+
+pub const CHAR_DIMS: Dimensions<u32> = Dimensions { w: 4, h: 6 };
 
 pub fn conv_srgb_to_linear(x: f64) -> f64 {
 	// See https://github.com/gfx-rs/wgpu/issues/2326
@@ -454,66 +456,69 @@ impl World {
 		infos: &GlobalInfo,
 	) {
 		let frame_buffer_dims = frame_buffer.dims;
-		let win_w = frame_buffer_dims.w as usize;
-		let interf_begin_x = (DRAW_CONSTANTS.interface_begin * win_w as f32) as usize;
+		let win_w = frame_buffer_dims.w;
+		let interf_begin_x = DRAW_CONSTANTS.interface_begin4 * win_w / 4;
 		let scale4 = infos.scale4;
 		// Interface background
 		frame_buffer
 			.iter_pixel_mut()
 			.enumerate()
 			.for_each(|(i, pixel)| {
-				if i % win_w > interf_begin_x {
+				if i as u32 % win_w > interf_begin_x {
 					pixel.copy_from_slice(&COLORS.bg_ui)
 				}
 			});
+		// HP
 		for i in 0..self.player.hp {
 			draw_rect(
 				frame_buffer,
 				Rect {
-					top_left: (
-						(interf_begin_x as u32 + (scale4 * (20 + 60 * i) / 4)) as i32,
-						60,
-					)
-						.into(),
-					dims: (40 * scale4 as i32 / 4, 40 * scale4 as i32 / 4).into(),
-				},
+					top_left: ((20 + 60 * i) as i32, 120).into(),
+					dims: (40, 40).into(),
+				}
+				.to_interface(interf_begin_x as i32, scale4),
 				[0x11, 0x81, 0x0c, 0xff],
 			)
 		}
+
+		const TEXT_SCALE: u32 = 4;
+		// Use base window size for interface to scale
+		let win_w = DRAW_CONSTANTS.sizes[0].w as i32;
+
+		let fps_str = format!("FPS: {fps:3}", fps = infos.fps);
+		let text_dims = text_box(fps_str.len(), TEXT_SCALE);
+
+		draw_text(
+			frame_buffer,
+			&sheets.font,
+			Rect { top_left: (win_w - text_dims.w, 12).into(), dims: text_dims }
+				.to_interface(0, scale4),
+			[0xff, 0xff, 0xff, 0xb0],
+			&fps_str,
+		);
+
+		let score_str = format!("SCORE: {score:3}", score = self.score);
+		let score_dims = text_box(score_str.len(), TEXT_SCALE);
+		draw_text(
+			frame_buffer,
+			&sheets.font,
+			Rect { top_left: (win_w - score_dims.w, 60).into(), dims: score_dims }
+				.to_interface(0, scale4),
+			[0xff, 0xff, 0xff, 0xb0],
+			&score_str,
+		);
 
 		let s = "LEVEL 1";
 		draw_text(
 			frame_buffer,
 			&sheets.font,
 			Rect {
-				top_left: (interf_begin_x as i32 + 16, 128).into(),
-				dims: (4 * s.len() as i32 * 5, 6 * 5 * 2).into(),
-			},
+				top_left: (20, 200).into(),
+				dims: text_box(s.len(), 2 * TEXT_SCALE),
+			}
+			.to_interface(interf_begin_x as i32, scale4),
 			[0xff, 0x00, 0x00, 0xff],
 			s,
-		);
-
-		let score_str = format!("SCORE: {score:3}", score = self.score);
-		let text_dims = Dimensions { w: score_str.len() as i32 * 4 * 5, h: 6 * 5 };
-		draw_text(
-			frame_buffer,
-			&sheets.font,
-			Rect {
-				top_left: (win_w as i32 - text_dims.w, 40).into(),
-				dims: text_dims,
-			},
-			[0xff, 0xff, 0xff, 0xb0],
-			&score_str,
-		);
-
-		let fps_str = format!("FPS: {fps:3}", fps = infos.fps);
-		let text_dims = Dimensions { w: fps_str.len() as i32 * 4 * 5, h: 6 * 5 };
-		draw_text(
-			frame_buffer,
-			&sheets.font,
-			Rect { top_left: (win_w as i32 - text_dims.w, 0).into(), dims: text_dims },
-			[0xff, 0xff, 0xff, 0xb0],
-			&fps_str,
 		);
 	}
 }
