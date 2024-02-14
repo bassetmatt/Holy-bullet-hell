@@ -177,7 +177,7 @@ impl Game {
 		self.frame_buffer.fill_with_color(COLORS.bg);
 		let world = &mut self.world.as_mut().unwrap();
 
-		world.draw_gameplay(&mut self.frame_buffer, &self.sheets);
+		world.draw_gameplay(&mut self.frame_buffer, &self.sheets, self.infos.scale4);
 		world.draw_interface(&mut self.frame_buffer, &self.sheets, &self.infos);
 	}
 
@@ -393,14 +393,15 @@ impl Projectile {
 }
 
 impl World {
-	pub fn draw_gameplay(&self, frame_buffer: &mut FrameBuffer, sheets: &Sheets) {
+	pub fn draw_gameplay(&self, frame_buffer: &mut FrameBuffer, sheets: &Sheets, scale4: u32) {
+		let scale = scale4 as f32 / 4.;
 		// Player
 		let player = &self.player;
 		draw_sprite(
 			frame_buffer,
 			&sheets.spritesheet,
 			player.sprite_coords(),
-			Rect::from_float(player.pos, player.size),
+			Rect::from_float_scale(player.pos, player.size, scale),
 			None,
 		);
 		// Player hitbox
@@ -408,7 +409,7 @@ impl World {
 			frame_buffer,
 			&sheets.spritesheet,
 			player.sprite_coords_hit(),
-			Rect::from_float(player.pos, player.hitbox.dims),
+			Rect::from_float_scale(player.pos, player.hitbox.dims, scale),
 			None,
 		);
 
@@ -418,12 +419,12 @@ impl World {
 				frame_buffer,
 				&sheets.spritesheet,
 				enemy.sprite_coords(),
-				Rect::from_float(enemy.pos, enemy.size),
+				Rect::from_float_scale(enemy.pos, enemy.size, scale),
 				None,
 			);
 			draw_rect(
 				frame_buffer,
-				Rect::life_bar_full(enemy.pos, enemy.size),
+				Rect::life_bar_full(enemy.pos, enemy.size).scale4(scale4),
 				[0xff, 0x00, 0x00, 0xff],
 			);
 			draw_rect(
@@ -432,7 +433,8 @@ impl World {
 					enemy.pos,
 					enemy.size,
 					enemy.hp / Enemy::max_hp(enemy.variant),
-				),
+				)
+				.scale4(scale4),
 				[0x00, 0xff, 0x00, 0xff],
 			);
 		}
@@ -443,7 +445,7 @@ impl World {
 				frame_buffer,
 				&sheets.spritesheet,
 				proj.sprite_coords(),
-				Rect::from_float(proj.pos, Dimensions { w: 10., h: 10. }),
+				Rect::from_float_scale(proj.pos, Dimensions { w: 10., h: 10. }, scale),
 				None,
 			);
 		}
@@ -508,17 +510,17 @@ impl World {
 			&score_str,
 		);
 
-		let s = "LEVEL 1";
+		let level_name = "LEVEL 1";
 		draw_text(
 			frame_buffer,
 			&sheets.font,
 			Rect {
 				top_left: (20, 200).into(),
-				dims: text_box(s.len(), 2 * TEXT_SCALE),
+				dims: text_box(level_name.len(), 2 * TEXT_SCALE),
 			}
 			.to_interface(interf_begin_x as i32, scale4),
 			[0xff, 0x00, 0x00, 0xff],
-			s,
+			level_name,
 		);
 	}
 }

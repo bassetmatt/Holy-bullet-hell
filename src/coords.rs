@@ -106,14 +106,22 @@ where
 macro_rules! apply_interface_int {
 	($type: ty) => {
 		impl Rect<$type> {
-			/// Takes a rectangle with top left at the beginning of the interface and translates+resizes it
-			pub fn to_interface(mut self, interface_begin: $type, scale4: u32) -> Self {
+			pub fn scale4(mut self, scale4: u32) -> Self {
 				let scale4 = scale4 as $type;
-				self.top_left.x = scale4 * self.top_left.x / 4 + interface_begin;
+				self.top_left.x = scale4 * self.top_left.x / 4;
 				self.top_left.y = scale4 * self.top_left.y / 4;
 				self.dims.w = scale4 * self.dims.w / 4;
 				self.dims.h = scale4 * self.dims.h / 4;
 				self
+			}
+			pub fn offset(mut self, offset_x: $type, offset_y: $type) -> Self {
+				self.top_left.x += offset_x;
+				self.top_left.y += offset_y;
+				self
+			}
+			/// Takes a rectangle with top left at the beginning of the interface and translates+resizes it
+			pub fn to_interface(self, interface_begin: $type, scale4: u32) -> Self {
+				self.scale4(scale4).offset(interface_begin, 0)
 			}
 		}
 	};
@@ -132,6 +140,20 @@ impl RectI {
 			dims: Dimensions { w: dims.w.round() as i32, h: dims.h.round() as i32 },
 		}
 	}
+
+	pub fn from_float_scale(pos: Point2<f32>, dims: Dimensions<f32>, scale: f32) -> RectI {
+		Rect {
+			top_left: Point2 {
+				x: ((pos.x - dims.w / 2.) * scale).round() as i32,
+				y: ((pos.y - dims.h / 2.) * scale).round() as i32,
+			},
+			dims: Dimensions {
+				w: (scale * dims.w).round() as i32,
+				h: (scale * dims.h).round() as i32,
+			},
+		}
+	}
+
 	pub fn iter(self) -> IterPointRect {
 		IterPointRect::with_rect(self)
 	}
