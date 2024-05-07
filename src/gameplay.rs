@@ -7,7 +7,7 @@ use std::{
 	collections::HashMap,
 	time::{Duration, Instant},
 };
-use winit::event_loop::EventLoopWindowTarget;
+use winit::event_loop::ActiveEventLoop;
 
 pub const DT_60: f32 = 1. / 60.;
 
@@ -284,15 +284,15 @@ impl World {
 		}
 	}
 
-	pub fn check_end(&self, evt_loop_target: &EventLoopWindowTarget<()>) {
+	pub fn check_end(&self, event_loop: &ActiveEventLoop) {
 		if self.player.hp == 0 {
 			// Goofiest dead message
 			println!("Ur so dead 💀, RIP BOZO 🔫🔫😂😂😂😂");
-			evt_loop_target.exit();
+			event_loop.exit();
 		}
 		if self.enemies.is_empty() && self.event_syst.events_clear() {
 			println!("You won! Score: {score}", score = self.score);
-			evt_loop_target.exit();
+			event_loop.exit();
 		}
 	}
 

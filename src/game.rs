@@ -4,18 +4,13 @@ use std::{
 	path::Path,
 	time::{Duration, Instant},
 };
-use winit::{
-	event::ElementState,
-	event_loop::{EventLoop, EventLoopWindowTarget},
-	keyboard::Key,
-	window::Window,
-};
+use winit::{event::ElementState, event_loop::ActiveEventLoop, keyboard::Key, window::Window};
 
 use crate::coords::Dimensions;
 use crate::draw::{create_window, FrameBuffer, Sheets, DRAW_CONSTANTS};
 use crate::gameplay::{Cooldown, EnemyType, Event, EventType, World};
 
-enum GameState {
+enum RunState {
 	_Playing,
 	_Paused,
 	_Menu(MenuChoice),
@@ -109,29 +104,39 @@ impl Inputs {
 	}
 }
 
-pub struct GlobalInfo {
-	_game_begin: Instant,
-	_level_begin: Option<Instant>,
-	frame_count: u64,
-	pub fps: u32,
-	fps_cooldown: Cooldown,
+pub struct Config {
 	pub resolution_choice: u8,
 	pub _fullscreen: bool,
 	/// Four times the scaling factor to avoid floating point operations
 	pub scale4: u32,
 }
 
-impl GlobalInfo {
-	fn new() -> GlobalInfo {
-		GlobalInfo {
+impl Config {
+	fn new() -> Config {
+		Config { resolution_choice: 0, _fullscreen: false, scale4: 4 }
+	}
+}
+
+pub struct GameInfo {
+	_game_begin: Instant,
+	_level_begin: Option<Instant>,
+	frame_count: u64,
+	pub fps: u32,
+	fps_cooldown: Cooldown,
+	pub dt: Duration,
+	pub t: Instant,
+}
+
+impl GameInfo {
+	fn new() -> GameInfo {
+		GameInfo {
 			_game_begin: Instant::now(),
 			_level_begin: None,
 			frame_count: 0,
 			fps: 0,
 			fps_cooldown: Cooldown::with_secs(0.1),
-			resolution_choice: 0,
-			_fullscreen: false,
-			scale4: 4,
+			dt: Duration::from_secs(1),
+			t: Instant::now(),
 		}
 	}
 
@@ -153,29 +158,31 @@ impl GlobalInfo {
 }
 
 pub struct Game {
-	_state: GameState,
+	_state: RunState,
 	pub world: Option<World>,
 	inputs: Inputs,
 	pub window: Window,
 	pub frame_buffer: FrameBuffer,
 	pub sheets: Sheets,
 	levels: Vec<Level>,
-	pub infos: GlobalInfo,
+	pub config: Config,
+	pub infos: GameInfo,
 }
 
 impl Game {
-	pub fn launch(event_loop: &EventLoop<()>) -> Game {
+	pub fn launch(event_loop: &ActiveEventLoop) -> Game {
 		env_logger::init();
 		let window = create_window(event_loop);
 		Game {
-			_state: GameState::_Playing,
+			_state: RunState::_Playing,
 			world: None,
-			levels: vec![],
 			inputs: Inputs::new(),
-			infos: GlobalInfo::new(),
 			frame_buffer: FrameBuffer::new(&window),
 			window,
 			sheets: Sheets::load(),
+			levels: vec![],
+			config: Config::new(),
+			infos: GameInfo::new(),
 		}
 	}
 
@@ -220,8 +227,9 @@ impl Game {
 		self.world = Some(new_world);
 	}
 
-	pub fn tick(&mut self, dt: Duration, evt_loop_target: &EventLoopWindowTarget<()>) {
+	pub fn tick(&mut self, event_loop: &ActiveEventLoop) {
 		let world = &mut self.world.as_mut().unwrap();
+		let dt = self.infos.dt;
 		// Applying events
 		world.process_events();
 		// Projectiles physics
@@ -229,12 +237,13 @@ impl Game {
 		// Main physics calculations
 		world.update_entities(dt, &self.inputs);
 		// Checks end condition
-		world.check_end(evt_loop_target);
+		world.check_end(event_loop);
 	}
-	pub fn update_fps(&mut self, dt: Duration) {
+
+	pub fn update_fps(&mut self) {
 		// Limit fps refresh for it to be readable
 		if self.infos.fps_cooldown.is_over() {
-			self.infos.fps = (1. / dt.as_secs_f64()).round() as u32;
+			self.infos.fps = (1. / self.infos.dt.as_secs_f64()).round() as u32;
 			self.infos.fps_cooldown.reset();
 		}
 	}

@@ -9,40 +9,55 @@ use crate::{
 	game::Game,
 };
 use smol_str::SmolStr;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use winit::{
+	application::ApplicationHandler,
 	error::EventLoopError,
-	event::{ElementState, Event, KeyEvent, WindowEvent},
-	event_loop::EventLoop,
+	event::{ElementState, KeyEvent, WindowEvent},
+	event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
 	keyboard::Key,
 };
 
-fn main() -> Result<(), EventLoopError> {
-	let event_loop = EventLoop::new()?;
-	let mut game = Game::launch(&event_loop);
-	// TODO: Put that in main loop when there is a menu
-	game.load_levels();
-	game.start_level(0);
+struct EventLoopState {
+	game_opt: Option<Game>,
+}
 
-	let mut t = Instant::now();
-	let mut dt = Duration::from_secs(1);
-	event_loop.run(move |event, evt_loop_target| match event {
-		Event::WindowEvent { window_id, ref event } if window_id == game.window.id() => match event {
+impl ApplicationHandler for EventLoopState {
+	fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+		if self.game_opt.is_none() {
+			let mut game = Game::launch(event_loop);
+			game.load_levels();
+			game.start_level(0);
+			self.game_opt = Some(game);
+		}
+	}
+
+	fn window_event(
+		&mut self,
+		event_loop: &ActiveEventLoop,
+		window_id: winit::window::WindowId,
+		event: WindowEvent,
+	) {
+		let game = self.game_opt.as_mut().unwrap();
+		if window_id != game.window.id() {
+			return;
+		}
+		match event {
 			WindowEvent::CloseRequested => {
 				//TODO: Save game ?
-				evt_loop_target.exit();
+				event_loop.exit();
 			},
 			WindowEvent::Resized(size) => {
-				game.resize(size);
+				game.resize(&size);
 			},
-			WindowEvent::KeyboardInput { event: KeyEvent { logical_key, state, .. }, .. } => {
+			WindowEvent::KeyboardInput { event: KeyEvent { ref logical_key, state, .. }, .. } => {
 				use winit::keyboard::NamedKey::*;
 				if matches!(state, ElementState::Pressed) {
 					// TODO: Move these into a function
-					let res_choice = &mut game.infos.resolution_choice;
+					let res_choice = &mut game.config.resolution_choice;
 					match logical_key {
 						Key::Named(Escape) => {
-							evt_loop_target.exit();
+							event_loop.exit();
 						},
 						Key::Character(key) if key == &SmolStr::new("]") => {
 							*res_choice += 1;
@@ -57,28 +72,40 @@ fn main() -> Result<(), EventLoopError> {
 						_ => {},
 					}
 				}
-				game.process_input(state, logical_key);
+				game.process_input(&state, logical_key);
 			},
 			_ => {},
-		},
-		Event::AboutToWait => {
-			// TODO: Handle game state
-			// Computes time elapsed
-			// TODO: Can I swap the 2 last lines ??
-			dt = Instant::elapsed(&t);
-			t = Instant::now();
-			game.update_fps(dt);
-			// TODO: The game doesn't handle game window resizing
-			game.tick(dt, evt_loop_target);
+		}
+	}
 
-			// Drawing
-			game.draw_in_game();
+	fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+		let game = self.game_opt.as_mut().unwrap();
+		// TODO: Handle game state
+		// Computes time elapsed
+		// TODO: Can I swap the 2 last lines ??
+		game.infos.dt = Instant::elapsed(&game.infos.t);
+		game.infos.t = Instant::now();
+		game.update_fps();
+		game.tick(event_loop);
 
-			game.infos.update();
-			game.redraw();
-			game.render();
-		},
-		_ => {},
-	})?;
+		// Drawing
+		game.draw_in_game();
+
+		game.infos.update();
+		game.redraw();
+		game.render();
+	}
+}
+
+fn game_run() -> Result<(), EventLoopError> {
+	let event_loop = EventLoop::new()?;
+	event_loop.set_control_flow(ControlFlow::Poll);
+	let mut loop_state = EventLoopState { game_opt: None };
+	event_loop.run_app(&mut loop_state)?;
+	Ok(())
+}
+
+fn main() -> Result<(), EventLoopError> {
+	game_run()?;
 	Ok(())
 }

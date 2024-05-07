@@ -1,15 +1,16 @@
-use crate::{
-	coords::{text_box, Dimensions, Rect, RectI},
-	game::{Game, GlobalInfo},
-	gameplay::{Enemy, EnemyType, Player, ProjType, Projectile, World},
-};
 use cgmath::{Point2, Vector2};
 use image::{DynamicImage, GenericImageView, ImageFormat};
 use pixels::{Pixels, SurfaceTexture, TextureError};
 use winit::{
-	dpi::PhysicalSize,
-	event_loop::EventLoop,
-	window::{Fullscreen, Window, WindowBuilder},
+	dpi::{PhysicalPosition, PhysicalSize},
+	event_loop::ActiveEventLoop,
+	window::{Fullscreen, Window},
+};
+
+use crate::{
+	coords::{text_box, Dimensions, Rect, RectI},
+	game::{Config, Game, GameInfo},
+	gameplay::{Enemy, EnemyType, Player, ProjType, Projectile, World},
 };
 
 pub struct DrawConstants {
@@ -69,20 +70,16 @@ pub fn conv_srgb_to_linear(x: f64) -> f64 {
 	}
 }
 
-pub fn create_window(event_loop: &EventLoop<()>) -> Window {
-	let window = {
-		let win_size = PhysicalSize::new(DRAW_CONSTANTS.sizes[1].w, DRAW_CONSTANTS.sizes[1].h);
-		WindowBuilder::new()
-			.with_title("Holy Bullet Hell")
-			.with_inner_size(win_size)
-			.with_resizable(false)
-			.with_fullscreen(None)
-			.build(event_loop)
-			.unwrap()
-	};
-	// Window is on the top left corner
-	window.set_outer_position(winit::dpi::PhysicalPosition::new(0, 0));
-	window
+pub fn create_window(event_loop: &ActiveEventLoop) -> Window {
+	let win_size = PhysicalSize::new(DRAW_CONSTANTS.sizes[1].w, DRAW_CONSTANTS.sizes[1].h);
+	let window_attributes = Window::default_attributes()
+		.with_title("Holy Bullet Hell")
+		.with_inner_size(win_size)
+		.with_resizable(false)
+		.with_fullscreen(None)
+		// Window is on the top left corner
+		.with_position(PhysicalPosition::new(0, 0));
+	event_loop.create_window(window_attributes).unwrap()
 }
 
 pub struct FrameBuffer {
@@ -160,7 +157,7 @@ impl Game {
 
 	pub fn resize(&mut self, size: &PhysicalSize<u32>) {
 		self.frame_buffer.resize_buffer(size).unwrap();
-		self.infos.scale4 = 4 * size.width / DRAW_CONSTANTS.sizes[0].w;
+		self.config.scale4 = 4 * size.width / DRAW_CONSTANTS.sizes[0].w;
 	}
 
 	pub fn _toggle_fullscreen(&mut self) {
@@ -177,8 +174,13 @@ impl Game {
 		self.frame_buffer.fill_with_color(COLORS.bg);
 		let world = &mut self.world.as_mut().unwrap();
 
-		world.draw_gameplay(&mut self.frame_buffer, &self.sheets, self.infos.scale4);
-		world.draw_interface(&mut self.frame_buffer, &self.sheets, &self.infos);
+		world.draw_gameplay(&mut self.frame_buffer, &self.sheets, self.config.scale4);
+		world.draw_interface(
+			&mut self.frame_buffer,
+			&self.sheets,
+			&self.config,
+			&self.infos,
+		);
 	}
 
 	pub fn render(&mut self) {
@@ -454,12 +456,13 @@ impl World {
 		&self,
 		frame_buffer: &mut FrameBuffer,
 		sheets: &Sheets,
-		infos: &GlobalInfo,
+		config: &Config,
+		infos: &GameInfo,
 	) {
 		let frame_buffer_dims = frame_buffer.dims;
 		let win_w = frame_buffer_dims.w;
 		let interf_begin_x = DRAW_CONSTANTS.interface_begin4 * win_w / 4;
-		let scale4 = infos.scale4;
+		let scale4 = config.scale4;
 		// Interface background
 		frame_buffer
 			.iter_pixel_mut()
