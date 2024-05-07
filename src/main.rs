@@ -95,6 +95,13 @@ impl ApplicationHandler for EventLoopState {
 		game.redraw();
 		game.render();
 	}
+
+	fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+		let _game = self.game_opt.as_mut().unwrap();
+		// TODO: Implement game save???
+		// game.save();
+		// game.window.close();
+	}
 }
 
 fn game_run() -> Result<(), EventLoopError> {
