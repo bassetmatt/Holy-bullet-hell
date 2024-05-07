@@ -1,5 +1,5 @@
 use crate::{
-	coords::{Dimensions, PhysicalBox, RectF},
+	coords::{CenteredBox, Dimensions, RectF},
 	game::Inputs,
 };
 use cgmath::{InnerSpace, Point2, Vector2, Zero};
@@ -10,6 +10,8 @@ use std::{
 use winit::event_loop::EventLoopWindowTarget;
 
 pub const DT_60: f32 = 1. / 60.;
+
+const PROJ_SIZE: Dimensions<f32> = Dimensions { w: 10., h: 10. };
 
 pub struct Cooldown {
 	last_emit: Option<Instant>,
@@ -34,7 +36,7 @@ impl Cooldown {
 		true
 	}
 
-	pub fn emit(&mut self) {
+	pub fn reset(&mut self) {
 		self.last_emit = Some(Instant::now());
 	}
 }
@@ -43,7 +45,7 @@ pub struct Player {
 	pub pos: Point2<f32>,
 	vel: Vector2<f32>,
 	pub size: Dimensions<f32>,
-	pub hitbox: PhysicalBox,
+	pub hitbox: CenteredBox,
 	pub hp: u32,
 	immunity: Cooldown,
 	new_shoot: Cooldown,
@@ -53,7 +55,7 @@ impl Player {
 	fn new() -> Self {
 		Self {
 			pos: (75., 200.).into(),
-			hitbox: PhysicalBox { center: (75., 200.).into(), dims: (12., 12.).into() },
+			hitbox: CenteredBox { center: (75., 200.).into(), dims: (12., 12.).into() },
 			vel: (0., 0.).into(),
 			size: Dimensions { w: 48., h: 48. },
 			hp: 5,
@@ -107,6 +109,7 @@ enum EnemyState {
 	NotSpawned,
 	OnScreen(fn(&mut Enemy, RectF)),
 	OffScreen,
+	Dead,
 }
 
 pub struct Enemy {
@@ -162,6 +165,7 @@ impl Enemy {
 			},
 		}
 	}
+
 	fn update_pos(&mut self, bounds: RectF, dt: f32) {
 		// Enemies behavior
 		const SPEED: f32 = 0.5;
@@ -186,6 +190,13 @@ impl Enemy {
 			self.pos += self.vel * dt / DT_60;
 		}
 	}
+
+	fn get_shot(&mut self, damage: f32) {
+		self.hp -= damage;
+		if self.hp <= 0. {
+			self.state = EnemyState::Dead;
+		}
+	}
 }
 
 pub enum ProjType {
@@ -198,6 +209,16 @@ pub struct Projectile {
 	pub pos: Point2<f32>,
 	vel: Vector2<f32>,
 	pub variant: ProjType,
+}
+
+impl Projectile {
+	fn damage(&self) -> f32 {
+		match self.variant {
+			ProjType::Basic => 1.,
+			ProjType::Aimed => 1.,
+			ProjType::PlayerShoot => 2.,
+		}
+	}
 }
 
 #[derive(Clone, Debug)]
@@ -245,7 +266,7 @@ pub struct World {
 	pub player: Player,
 	pub projectiles: Vec<Projectile>,
 	pub enemies: Vec<Enemy>,
-	rect: RectF,
+	boundaries: RectF,
 	pub score: u64,
 	event_syst: EventSystem,
 }
@@ -257,7 +278,7 @@ impl World {
 			player: Player::new(),
 			projectiles: Vec::new(),
 			enemies: vec![],
-			rect: dims.into_rect(),
+			boundaries: dims.into_rect(),
 			score: 0,
 			event_syst: EventSystem::new(evt_list),
 		}
@@ -276,28 +297,24 @@ impl World {
 	}
 
 	pub fn process_events(&mut self) {
-		let mut to_remove = vec![];
 		let evt_list = &mut self.event_syst.list;
 		let map = &mut self.event_syst.history;
 		// Checks if absolute events are triggered
-		for (i, e) in evt_list.iter().enumerate() {
-			if e.time.is_some_and(|t| Instant::now() >= t) {
-				match &e.variant {
-					EventType::_SpawnEnemy(pos, variant) => {
-						self.enemies.push(Enemy::spawn(*pos, *variant));
-					},
-					var => {
-						unimplemented!("Event variant '{var:?}' not implemented")
-					},
-				}
-				map.insert(e.id, Instant::now());
-				to_remove.push(i);
+		evt_list.retain(|e| {
+			if !e.time.is_some_and(|t| Instant::now() >= t) {
+				return true;
 			}
-		}
-		// Removes done events
-		for i in to_remove.into_iter().rev() {
-			evt_list.remove(i);
-		}
+			match &e.variant {
+				EventType::_SpawnEnemy(pos, variant) => {
+					self.enemies.push(Enemy::spawn(*pos, *variant));
+				},
+				var => {
+					unimplemented!("Event variant '{var:?}' not implemented")
+				},
+			}
+			map.insert(e.id, Instant::now());
+			false
+		});
 		// Updates relative events to be transformed into absolute events
 		for e in evt_list.iter_mut() {
 			if let Some((id, t)) = e.ref_evt {
@@ -312,7 +329,7 @@ impl World {
 	pub fn update_entities(&mut self, dt: Duration, inputs: &Inputs) {
 		// Player
 		let player = &mut self.player;
-		player.update_pos(inputs, self.rect, dt.as_secs_f32());
+		player.update_pos(inputs, self.boundaries, dt.as_secs_f32());
 		// Player shoot
 		if inputs.shoot & player.new_shoot.is_over() {
 			let proj = Projectile {
@@ -321,19 +338,24 @@ impl World {
 				variant: ProjType::PlayerShoot,
 			};
 			self.projectiles.push(proj);
-			player.new_shoot.last_emit = Some(Instant::now());
+			player.new_shoot.reset();
 		}
 
 		// Enemies physics
-		let mut to_remove = vec![];
-		for (i, enemy) in self.enemies.iter_mut().enumerate() {
-			// Updates position
-			enemy.update_pos(self.rect, dt.as_secs_f32());
-			if matches!(enemy.state, EnemyState::OffScreen) {
-				to_remove.push(i);
+		// Updates position
+		self.enemies.retain_mut(|enemy| {
+			enemy.update_pos(self.boundaries, dt.as_secs_f32());
+			// If the enemy is dead, add points
+			if matches!(enemy.state, EnemyState::Dead) {
+				self.score += 100;
+				return false;
 			}
+			// Removes if offscreen
+			!matches!(enemy.state, EnemyState::OffScreen)
+		});
+		for enemy in self.enemies.iter_mut() {
 			// Shooting
-			if enemy.proj_cd.is_over() && self.rect.contains(enemy.pos) {
+			if enemy.proj_cd.is_over() && self.boundaries.contains(enemy.pos) {
 				let proj = {
 					let pos = enemy.pos + enemy.size.h * 0.6 * Vector2::unit_y();
 					match enemy.variant {
@@ -351,78 +373,56 @@ impl World {
 					}
 				};
 				self.projectiles.push(proj);
-				enemy.proj_cd.last_emit = Some(Instant::now());
+				enemy.proj_cd.reset();
 			}
-		}
-		for i in to_remove.into_iter().rev() {
-			self.enemies.remove(i);
 		}
 	}
 
 	pub fn update_projectiles(&mut self, dt: Duration) {
 		let player = &mut self.player;
 
-		let mut to_remove: Vec<usize> = vec![];
-		for (i, proj) in self.projectiles.iter_mut().enumerate() {
+		self.projectiles.retain_mut(|proj| {
 			proj.pos += proj.vel * dt.as_secs_f32() / DT_60;
-			if !self.rect.contains(proj.pos) {
-				to_remove.push(i);
-				continue;
+			if !self.boundaries.contains(proj.pos) {
+				return false;
 			}
-			for (j, enemy) in self.enemies.iter_mut().enumerate() {
-				if collide_rectangle(
-					enemy.pos,
-					proj.pos,
-					enemy.size,
-					Dimensions { w: 10., h: 10. },
-				) & matches!(proj.variant, ProjType::PlayerShoot)
+
+			for enemy in self.enemies.iter_mut() {
+				if collide_rectangle(enemy.pos, enemy.size, proj.pos, PROJ_SIZE)
+					& matches!(proj.variant, ProjType::PlayerShoot)
 				{
-					enemy.hp -= 2.;
-					to_remove.push(i);
-					if enemy.hp <= 0. {
-						self.enemies.remove(j);
-						self.score += 100;
-						break;
-					}
+					enemy.get_shot(proj.damage());
+					return false;
 				}
 			}
+
 			if player.immunity.is_over()
-				& collide_rectangle(
-					player.pos,
-					proj.pos,
-					player.hitbox.dims,
-					Dimensions { w: 10., h: 10. },
-				) & !matches!(proj.variant, ProjType::PlayerShoot)
+				& collide_rectangle(player.pos, player.hitbox.dims, proj.pos, PROJ_SIZE)
+				& !matches!(proj.variant, ProjType::PlayerShoot)
 			{
 				if player.hp > 0 {
-					player.hp -= 1;
+					player.hp = player.hp.saturating_sub(proj.damage() as u32)
 				}
 				if player.hp == 0 {
-					break;
+					return false;
 				}
-				to_remove.push(i);
 
-				player.immunity.last_emit = Some(Instant::now());
+				player.immunity.reset();
+				return false;
 			}
-		}
-		for i in to_remove.into_iter().rev() {
-			self.projectiles.remove(i);
-		}
+			true
+		});
 	}
 }
 
 fn collide_rectangle(
 	pos_a: Point2<f32>,
-	pos_b: Point2<f32>,
 	size_a: Dimensions<f32>,
+	pos_b: Point2<f32>,
 	size_b: Dimensions<f32>,
 ) -> bool {
-	((pos_a.x - size_a.w / 2. <= pos_b.x - size_b.w / 2.
-		&& pos_b.x - size_b.w / 2. <= pos_a.x + size_a.w / 2.)
-		|| (pos_a.x - size_a.w / 2. <= pos_b.x + size_b.w / 2.
-			&& pos_b.x + size_b.w / 2. <= pos_a.x + size_a.w / 2.))
-		&& ((pos_a.y - size_a.h / 2. <= pos_b.y - size_b.h / 2.
-			&& pos_b.y - size_b.h / 2. <= pos_a.y + size_a.h / 2.)
-			|| (pos_a.y - size_a.h / 2. <= pos_b.y + size_b.h / 2.
-				&& pos_b.y + size_b.h / 2. <= pos_a.y + size_a.h / 2.))
+	!(pos_a.x + size_a.w / 2. < pos_b.x - size_b.w / 2.
+		|| pos_a.x - size_a.w / 2. > pos_b.x + size_b.w / 2.
+		|| pos_a.y + size_a.h / 2. < pos_b.y - size_b.h / 2.
+		|| pos_a.y - size_a.h / 2. > pos_b.y + size_b.h / 2.)
 }

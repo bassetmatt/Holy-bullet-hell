@@ -12,12 +12,12 @@ use winit::{
 	window::{Fullscreen, Window, WindowBuilder},
 };
 
-struct DrawConstants {
+pub struct DrawConstants {
 	interface_begin4: u32,
-	sizes: [Dimensions<u32>; 3],
+	pub sizes: [Dimensions<u32>; 3],
 }
 
-const DRAW_CONSTANTS: DrawConstants = DrawConstants {
+pub const DRAW_CONSTANTS: DrawConstants = DrawConstants {
 	interface_begin4: 3,
 	sizes: [
 		Dimensions { w: 1280, h: 720 },
@@ -75,7 +75,7 @@ pub fn create_window(event_loop: &EventLoop<()>) -> Window {
 		WindowBuilder::new()
 			.with_title("Holy Bullet Hell")
 			.with_inner_size(win_size)
-			.with_resizable(true)
+			.with_resizable(false)
 			.with_fullscreen(None)
 			.build(event_loop)
 			.unwrap()
@@ -192,7 +192,6 @@ macro_rules! opacity {
 	};
 }
 
-// TODO: Change arguments to FrameBuffer
 pub fn draw_rect(frame_buffer: &mut FrameBuffer, dst: RectI, mut color: [u8; 4]) {
 	let frame_buffer_dims = frame_buffer.dims;
 	// Transparent

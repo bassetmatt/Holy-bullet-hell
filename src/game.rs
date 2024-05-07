@@ -12,7 +12,7 @@ use winit::{
 };
 
 use crate::coords::Dimensions;
-use crate::draw::{create_window, FrameBuffer, Sheets};
+use crate::draw::{create_window, FrameBuffer, Sheets, DRAW_CONSTANTS};
 use crate::gameplay::{Cooldown, EnemyType, Event, EventType, World};
 
 enum GameState {
@@ -209,9 +209,12 @@ impl Game {
 
 	pub fn start_level(&mut self, id: u32) {
 		self.infos.start_level();
-		let dims = self.frame_buffer.dims;
+		// The wolrd size is fixed as the lowest resolution and the graphics are scaled up
 		let new_world = World::start(
-			Dimensions { w: (0.8 * dims.w as f32), h: dims.h as f32 },
+			Dimensions {
+				w: DRAW_CONSTANTS.sizes[0].w as f32 * 0.75,
+				h: DRAW_CONSTANTS.sizes[0].h as f32,
+			},
 			self.levels.get(id as usize).unwrap().event_list.clone(),
 		);
 		self.world = Some(new_world);
@@ -221,10 +224,10 @@ impl Game {
 		let world = &mut self.world.as_mut().unwrap();
 		// Applying events
 		world.process_events();
-		// Main physics calculations
-		world.update_entities(dt, &self.inputs);
 		// Projectiles physics
 		world.update_projectiles(dt);
+		// Main physics calculations
+		world.update_entities(dt, &self.inputs);
 		// Checks end condition
 		world.check_end(evt_loop_target);
 	}
@@ -232,7 +235,7 @@ impl Game {
 		// Limit fps refresh for it to be readable
 		if self.infos.fps_cooldown.is_over() {
 			self.infos.fps = (1. / dt.as_secs_f64()).round() as u32;
-			self.infos.fps_cooldown.emit();
+			self.infos.fps_cooldown.reset();
 		}
 	}
 }

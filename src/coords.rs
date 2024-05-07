@@ -193,13 +193,13 @@ impl Iterator for IterPointRect {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct PhysicalBox {
+pub struct CenteredBox {
 	pub center: Point2<f32>,
 	pub dims: Dimensions<f32>,
 }
 
 #[allow(dead_code)]
-impl PhysicalBox {
+impl CenteredBox {
 	fn top(&self) -> f32 {
 		self.center.y - (self.dims.h / 2.)
 	}
