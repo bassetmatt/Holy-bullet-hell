@@ -1,0 +1,9 @@
+# Metadata
+$title Level 2
+
+# Events
+// <type>    <var>  <t> <x> <y> <ref>
+@spawn-enemy basic   2  400 -25   -
+@spawn-enemy basic   0  450 -25   -
+@spawn-enemy basic   3  550 -25   -
+@spawn-enemy sniper  2  950 -25   0
