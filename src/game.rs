@@ -160,7 +160,7 @@ impl GameInfo {
 pub struct Game {
 	_state: RunState,
 	pub world: Option<World>,
-	inputs: Inputs,
+	pub inputs: Inputs,
 	pub window: Window,
 	pub frame_buffer: FrameBuffer,
 	pub sheets: Sheets,
@@ -228,16 +228,21 @@ impl Game {
 	}
 
 	pub fn tick(&mut self, event_loop: &ActiveEventLoop) {
-		let world = &mut self.world.as_mut().unwrap();
-		let dt = self.infos.dt;
+		// TODO: Maybe better assignment of world?
 		// Applying events
-		world.process_events();
+		{
+			let world = self.world.as_mut().unwrap();
+			world.process_events();
+		}
 		// Projectiles physics
-		world.update_projectiles(dt);
+		self.update_projectiles();
 		// Main physics calculations
-		world.update_entities(dt, &self.inputs);
+		self.update_entities();
 		// Checks end condition
-		world.check_end(event_loop);
+		{
+			let world = self.world.as_mut().unwrap();
+			world.check_end(event_loop);
+		}
 	}
 
 	pub fn update_fps(&mut self) {

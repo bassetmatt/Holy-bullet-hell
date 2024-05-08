@@ -220,3 +220,15 @@ impl CenteredBox {
 			&& coords.y < self.bottom()
 	}
 }
+
+pub fn collide_rectangle(
+	pos_a: Point2<f32>,
+	size_a: Dimensions<f32>,
+	pos_b: Point2<f32>,
+	size_b: Dimensions<f32>,
+) -> bool {
+	!(pos_a.x + size_a.w / 2. < pos_b.x - size_b.w / 2.
+		|| pos_a.x - size_a.w / 2. > pos_b.x + size_b.w / 2.
+		|| pos_a.y + size_a.h / 2. < pos_b.y - size_b.h / 2.
+		|| pos_a.y - size_a.h / 2. > pos_b.y + size_b.h / 2.)
+}

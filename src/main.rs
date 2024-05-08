@@ -44,12 +44,12 @@ impl ApplicationHandler for EventLoopState {
 		}
 		match event {
 			WindowEvent::CloseRequested => {
-				//TODO: Save game ?
 				event_loop.exit();
 			},
 			WindowEvent::Resized(size) => {
 				game.resize(&size);
 			},
+
 			WindowEvent::KeyboardInput { event: KeyEvent { ref logical_key, state, .. }, .. } => {
 				use winit::keyboard::NamedKey::*;
 				if matches!(state, ElementState::Pressed) {

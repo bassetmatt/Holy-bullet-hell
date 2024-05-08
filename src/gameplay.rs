@@ -1,6 +1,6 @@
 use crate::{
-	coords::{CenteredBox, Dimensions, RectF},
-	game::Inputs,
+	coords::{collide_rectangle, CenteredBox, Dimensions, RectF},
+	game::{Game, Inputs},
 };
 use cgmath::{InnerSpace, Point2, Vector2, Zero};
 use std::{
@@ -325,11 +325,16 @@ impl World {
 			}
 		}
 	}
+}
 
-	pub fn update_entities(&mut self, dt: Duration, inputs: &Inputs) {
+impl Game {
+	pub fn update_entities(&mut self) {
+		let world = &mut self.world.as_mut().unwrap();
+		let dt = self.infos.dt;
+		let inputs = &self.inputs;
 		// Player
-		let player = &mut self.player;
-		player.update_pos(inputs, self.boundaries, dt.as_secs_f32());
+		let player = &mut world.player;
+		player.update_pos(inputs, world.boundaries, dt.as_secs_f32());
 		// Player shoot
 		if inputs.shoot & player.new_shoot.is_over() {
 			let proj = Projectile {
@@ -337,25 +342,25 @@ impl World {
 				vel: Vector2::unit_y() * -10.,
 				variant: ProjType::PlayerShoot,
 			};
-			self.projectiles.push(proj);
+			world.projectiles.push(proj);
 			player.new_shoot.reset();
 		}
 
 		// Enemies physics
 		// Updates position
-		self.enemies.retain_mut(|enemy| {
-			enemy.update_pos(self.boundaries, dt.as_secs_f32());
+		world.enemies.retain_mut(|enemy| {
+			enemy.update_pos(world.boundaries, dt.as_secs_f32());
 			// If the enemy is dead, add points
 			if matches!(enemy.state, EnemyState::Dead) {
-				self.score += 100;
+				world.score += 100;
 				return false;
 			}
 			// Removes if offscreen
 			!matches!(enemy.state, EnemyState::OffScreen)
 		});
-		for enemy in self.enemies.iter_mut() {
+		for enemy in world.enemies.iter_mut() {
 			// Shooting
-			if enemy.proj_cd.is_over() && self.boundaries.contains(enemy.pos) {
+			if enemy.proj_cd.is_over() && world.boundaries.contains(enemy.pos) {
 				let proj = {
 					let pos = enemy.pos + enemy.size.h * 0.6 * Vector2::unit_y();
 					match enemy.variant {
@@ -372,24 +377,25 @@ impl World {
 						},
 					}
 				};
-				self.projectiles.push(proj);
+				world.projectiles.push(proj);
 				enemy.proj_cd.reset();
 			}
 		}
 	}
 
-	pub fn update_projectiles(&mut self, dt: Duration) {
-		let player = &mut self.player;
+	pub fn update_projectiles(&mut self) {
+		let world = &mut self.world.as_mut().unwrap();
+		let player = &mut world.player;
 
-		self.projectiles.retain_mut(|proj| {
-			proj.pos += proj.vel * dt.as_secs_f32() / DT_60;
-			if !self.boundaries.contains(proj.pos) {
+		world.projectiles.retain_mut(|proj| {
+			proj.pos += proj.vel * self.infos.dt.as_secs_f32() / DT_60;
+			if !world.boundaries.contains(proj.pos) {
 				return false;
 			}
 
-			for enemy in self.enemies.iter_mut() {
-				if collide_rectangle(enemy.pos, enemy.size, proj.pos, PROJ_SIZE)
-					& matches!(proj.variant, ProjType::PlayerShoot)
+			for enemy in world.enemies.iter_mut() {
+				if matches!(proj.variant, ProjType::PlayerShoot)
+					& collide_rectangle(enemy.pos, enemy.size, proj.pos, PROJ_SIZE)
 				{
 					enemy.get_shot(proj.damage());
 					return false;
@@ -397,10 +403,11 @@ impl World {
 			}
 
 			if player.immunity.is_over()
-				& collide_rectangle(player.pos, player.hitbox.dims, proj.pos, PROJ_SIZE)
 				& !matches!(proj.variant, ProjType::PlayerShoot)
+				& collide_rectangle(player.pos, player.hitbox.dims, proj.pos, PROJ_SIZE)
 			{
 				if player.hp > 0 {
+					// Avoids underflow if damage is more than 1
 					player.hp = player.hp.saturating_sub(proj.damage() as u32)
 				}
 				if player.hp == 0 {
@@ -413,16 +420,4 @@ impl World {
 			true
 		});
 	}
-}
-
-fn collide_rectangle(
-	pos_a: Point2<f32>,
-	size_a: Dimensions<f32>,
-	pos_b: Point2<f32>,
-	size_b: Dimensions<f32>,
-) -> bool {
-	!(pos_a.x + size_a.w / 2. < pos_b.x - size_b.w / 2.
-		|| pos_a.x - size_a.w / 2. > pos_b.x + size_b.w / 2.
-		|| pos_a.y + size_a.h / 2. < pos_b.y - size_b.h / 2.
-		|| pos_a.y - size_a.h / 2. > pos_b.y + size_b.h / 2.)
 }
