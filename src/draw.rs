@@ -9,7 +9,7 @@ use winit::{
 
 use crate::{
 	coords::{text_box, Dimensions, Rect, RectI},
-	game::{Config, Game, GameInfo, MenuChoice},
+	game::{Config, Game, GameInfo, Level, MenuChoice},
 	gameplay::{Enemy, EnemyType, Player, ProjType, Projectile, World},
 };
 
@@ -32,10 +32,16 @@ pub const N_SIZES: u8 = DRAW_CONSTANTS.sizes.len() as u8;
 struct ColorPalette {
 	bg: [u8; 4],
 	bg_ui: [u8; 4],
+	menu_select: [u8; 4],
+	menu_text: [u8; 4],
 }
 
-const COLORS: ColorPalette =
-	ColorPalette { bg: [0x08, 0x0b, 0x1e, 0xff], bg_ui: [0x20, 0x11, 0x38, 0xff] };
+const COLORS: ColorPalette = ColorPalette {
+	bg: [0x08, 0x0b, 0x1e, 0xff],
+	bg_ui: [0x20, 0x11, 0x38, 0xff],
+	menu_select: [0xff, 0x00, 0x00, 0xff],
+	menu_text: [0xff, 0xff, 0xff, 0xff],
+};
 
 pub struct Sheets {
 	font: DynamicImage,
@@ -183,165 +189,95 @@ impl Game {
 		);
 	}
 
-	pub fn render(&mut self) {
-		self.frame_buffer.buffer.render().unwrap();
+	fn draw_menu_entry(
+		&mut self,
+		text: &str,
+		text_scale: (i32, i32),
+		mut dst: Point2<i32>,
+		selected: bool,
+	) {
+		let text = text.to_uppercase();
+		let text_dims = text_box(text.len(), 4) * text_scale;
+		// Centers text
+		dst.x -= text_dims.w / 2;
+		let color = if selected {
+			COLORS.menu_select
+		} else {
+			COLORS.menu_text
+		};
+
+		draw_text(
+			&mut self.frame_buffer,
+			&self.sheets.font,
+			Rect { top_left: dst, dims: text_dims },
+			color,
+			&text,
+		);
 	}
 
 	pub fn draw_menu(&mut self, choice: MenuChoice) {
 		self.frame_buffer.fill_with_color(COLORS.bg);
-		let frame_buffer_dims = self.frame_buffer.dims;
-		let win_w = frame_buffer_dims.w;
-		let win_h = frame_buffer_dims.h;
-		let font_sheet = &self.sheets.font;
+
+		let (base_x, base_y, title_y) = {
+			let frame_buffer_dims = self.frame_buffer.dims;
+			let win_w = frame_buffer_dims.w;
+			let win_h = frame_buffer_dims.h;
+			(win_w as i32 / 2, win_h as i32 / 2, win_h as i32 / 10)
+		};
+
 		match choice {
 			MenuChoice::Play | MenuChoice::Quit | MenuChoice::Options => {
-				let text = "Holy Bullet Hell".to_uppercase();
-				let text_dims = text_box(text.len(), 4) * 5;
-				draw_text(
-					&mut self.frame_buffer,
-					font_sheet,
-					Rect {
-						top_left: (win_w as i32 / 2 - text_dims.w / 2, win_h as i32 / 10).into(),
-						dims: text_dims,
-					},
-					[0xff, 0xff, 0xff, 0xff],
-					&text,
-				);
+				self.draw_menu_entry("Holy Bullet Hell", (5, 5), (base_x, title_y).into(), false);
 
-				// TODO: Hoooolyyy gotta factorise this cringe code
-				let text = "Start".to_uppercase();
-				let text_dims = text_box(text.len(), 4) * 3;
-				let color = if choice == MenuChoice::Play {
-					[0xff, 0x00, 0x00, 0xff]
-				} else {
-					[0xff, 0xff, 0xff, 0xff]
-				};
-				draw_text(
-					&mut self.frame_buffer,
-					font_sheet,
-					Rect {
-						top_left: (win_w as i32 / 2 - text_dims.w / 2, win_h as i32 / 2).into(),
-						dims: text_dims,
-					},
-					color,
-					&text,
+				self.draw_menu_entry(
+					"Start",
+					(3, 3),
+					(base_x, base_y).into(),
+					choice == MenuChoice::Play,
 				);
-
-				let text = "Options".to_uppercase();
-				let text_dims = text_box(text.len(), 4) * 3;
-				let color = if choice == MenuChoice::Options {
-					[0xff, 0x00, 0x00, 0xff]
-				} else {
-					[0xff, 0xff, 0xff, 0xff]
-				};
-				draw_text(
-					&mut self.frame_buffer,
-					font_sheet,
-					Rect {
-						top_left: (win_w as i32 / 2 - text_dims.w / 2, win_h as i32 / 2 + 100).into(),
-						dims: text_dims,
-					},
-					color,
-					&text,
+				self.draw_menu_entry(
+					"Options",
+					(3, 3),
+					(base_x, base_y + 100).into(),
+					choice == MenuChoice::Options,
 				);
-
-				let text = "Quit".to_uppercase();
-				let text_dims = text_box(text.len(), 4) * 3;
-				let color = if choice == MenuChoice::Quit {
-					[0xff, 0x00, 0x00, 0xff]
-				} else {
-					[0xff, 0xff, 0xff, 0xff]
-				};
-				draw_text(
-					&mut self.frame_buffer,
-					font_sheet,
-					Rect {
-						top_left: (win_w as i32 / 2 - text_dims.w / 2, win_h as i32 / 2 + 200).into(),
-						dims: text_dims,
-					},
-					color,
-					&text,
+				self.draw_menu_entry(
+					"Quit",
+					(3, 3),
+					(base_x, base_y + 200).into(),
+					choice == MenuChoice::Quit,
 				);
 			},
 			MenuChoice::Level(id) => {
-				let text = "Level Selection".to_uppercase();
-				let text_dims = text_box(text.len(), 4) * 5;
-				draw_text(
-					&mut self.frame_buffer,
-					font_sheet,
-					Rect {
-						top_left: (win_w as i32 / 2 - text_dims.w / 2, win_h as i32 / 10).into(),
-						dims: text_dims,
-					},
-					[0xff, 0xff, 0xff, 0xff],
-					&text,
-				);
-
+				self.draw_menu_entry("Level Selection", (5, 5), (base_x, title_y).into(), false);
 				for (i, level) in self.levels.iter().enumerate() {
-					let text = &level.name.to_uppercase();
-					let text_dims = text_box(text.len(), 4) * 3;
-					let color = if i as u16 == id {
-						[0xff, 0x00, 0x00, 0xff]
-					} else {
-						[0xff, 0xff, 0xff, 0xff]
-					};
-					draw_text(
-						&mut self.frame_buffer,
-						font_sheet,
-						Rect {
-							top_left: (
-								win_w as i32 / 2 - text_dims.w / 2,
-								win_h as i32 / 2 + 100 * i as i32,
-							)
-								.into(),
-							dims: text_dims,
-						},
-						color,
-						text,
+					self.draw_menu_entry(
+						&level.name,
+						(3, 3),
+						(base_x, base_y + 100 * i as i32).into(),
+						id == i as u16,
 					);
 				}
 			},
-			// TODO: Implement options menu
-			MenuChoice::Resolution => {
-				let text = "Resolution".to_uppercase();
-				let text_dims = text_box(text.len(), 4) * 5;
-				draw_text(
-					&mut self.frame_buffer,
-					font_sheet,
-					Rect {
-						top_left: (win_w as i32 / 2 - text_dims.w / 2, win_h as i32 / 10).into(),
-						dims: text_dims,
-					},
-					[0xff, 0xff, 0xff, 0xff],
-					&text,
-				);
 
-				let res_choice = &mut self.config.resolution_choice;
+			MenuChoice::Resolution => {
+				self.draw_menu_entry("Resolution", (5, 5), (base_x, title_y).into(), false);
+
+				let res_choice = self.config.resolution_choice;
 				for (i, res) in DRAW_CONSTANTS.sizes.iter().enumerate() {
-					let text = format!("{:4} X {:4}", res.w, res.h);
-					let text_dims = text_box(text.len(), 4) * 3;
-					let color = if i as u8 == *res_choice {
-						[0xff, 0x00, 0x00, 0xff]
-					} else {
-						[0xff, 0xff, 0xff, 0xff]
-					};
-					draw_text(
-						&mut self.frame_buffer,
-						font_sheet,
-						Rect {
-							top_left: (
-								win_w as i32 / 2 - text_dims.w / 2,
-								win_h as i32 / 2 + 100 * i as i32,
-							)
-								.into(),
-							dims: text_dims,
-						},
-						color,
-						&text,
+					self.draw_menu_entry(
+						&format!("{:4} X {:4}", res.w, res.h),
+						(3, 3),
+						(base_x, base_y + 100 * i as i32).into(),
+						res_choice == i as u8,
 					);
 				}
 			},
 		}
+	}
+
+	pub fn render(&mut self) {
+		self.frame_buffer.buffer.render().unwrap();
 	}
 }
 
