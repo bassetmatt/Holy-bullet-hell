@@ -1,4 +1,3 @@
-use smol_str::SmolStr;
 use std::time::Instant;
 use winit::{
 	application::ApplicationHandler,
@@ -8,10 +7,7 @@ use winit::{
 	keyboard::Key,
 };
 
-use crate::{
-	draw::{ResizableWindow, N_SIZES},
-	game::Game,
-};
+use crate::game::{Game, MenuChoice, RunState};
 
 struct EventLoopState {
 	game_opt: Option<Game>,
@@ -22,7 +18,6 @@ impl ApplicationHandler for EventLoopState {
 		if self.game_opt.is_none() {
 			let mut game = Game::launch(event_loop);
 			game.load_levels();
-			game.start_level(0);
 			self.game_opt = Some(game);
 		}
 	}
@@ -48,26 +43,16 @@ impl ApplicationHandler for EventLoopState {
 			WindowEvent::KeyboardInput { event: KeyEvent { ref logical_key, state, .. }, .. } => {
 				use winit::keyboard::NamedKey::*;
 				if matches!(state, ElementState::Pressed) {
-					// TODO: Move these into a function
-					let res_choice = &mut game.config.resolution_choice;
-					match logical_key {
-						Key::Named(Escape) => {
-							event_loop.exit();
-						},
-						Key::Character(key) if key == &SmolStr::new("]") => {
-							*res_choice += 1;
-							*res_choice %= N_SIZES;
-							game.window.request_window_resize(*res_choice);
-						},
-						Key::Character(key) if key == &SmolStr::new("[") => {
-							*res_choice -= 1;
-							*res_choice %= N_SIZES;
-							game.window.request_window_resize(*res_choice);
-						},
-						_ => {},
+					// TODO: Move these into a function ???
+					if logical_key == &Key::Named(Escape) && game.state == RunState::Playing {
+						game.world = None;
+						game.state = RunState::Menu(MenuChoice::Play);
 					}
 				}
 				game.process_input(&state, logical_key);
+				if game.state == RunState::Quitting {
+					event_loop.exit();
+				}
 			},
 			_ => {},
 		}
@@ -81,14 +66,27 @@ impl ApplicationHandler for EventLoopState {
 		game.infos.dt = Instant::elapsed(&game.infos.t);
 		game.infos.t = Instant::now();
 		game.update_fps();
-		game.tick(event_loop);
 
-		// Drawing
-		game.draw_in_game();
+		match game.state {
+			RunState::Playing => {
+				game.tick(event_loop);
 
-		game.infos.update();
-		game.redraw();
-		game.render();
+				// Drawing
+				game.draw_in_game();
+
+				game.infos.update();
+				game.redraw();
+				game.render();
+			},
+			RunState::Menu(choice) => {
+				game.draw_menu(choice);
+
+				game.infos.update();
+				game.redraw();
+				game.render();
+			},
+			_ => {},
+		}
 	}
 
 	fn exiting(&mut self, _event_loop: &ActiveEventLoop) {

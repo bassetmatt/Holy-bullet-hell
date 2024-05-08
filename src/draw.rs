@@ -9,7 +9,7 @@ use winit::{
 
 use crate::{
 	coords::{text_box, Dimensions, Rect, RectI},
-	game::{Config, Game, GameInfo},
+	game::{Config, Game, GameInfo, MenuChoice},
 	gameplay::{Enemy, EnemyType, Player, ProjType, Projectile, World},
 };
 
@@ -185,6 +185,163 @@ impl Game {
 
 	pub fn render(&mut self) {
 		self.frame_buffer.buffer.render().unwrap();
+	}
+
+	pub fn draw_menu(&mut self, choice: MenuChoice) {
+		self.frame_buffer.fill_with_color(COLORS.bg);
+		let frame_buffer_dims = self.frame_buffer.dims;
+		let win_w = frame_buffer_dims.w;
+		let win_h = frame_buffer_dims.h;
+		let font_sheet = &self.sheets.font;
+		match choice {
+			MenuChoice::Play | MenuChoice::Quit | MenuChoice::Options => {
+				let text = "Holy Bullet Hell".to_uppercase();
+				let text_dims = text_box(text.len(), 4) * 5;
+				draw_text(
+					&mut self.frame_buffer,
+					font_sheet,
+					Rect {
+						top_left: (win_w as i32 / 2 - text_dims.w / 2, win_h as i32 / 10).into(),
+						dims: text_dims,
+					},
+					[0xff, 0xff, 0xff, 0xff],
+					&text,
+				);
+
+				// TODO: Hoooolyyy gotta factorise this cringe code
+				let text = "Start".to_uppercase();
+				let text_dims = text_box(text.len(), 4) * 3;
+				let color = if choice == MenuChoice::Play {
+					[0xff, 0x00, 0x00, 0xff]
+				} else {
+					[0xff, 0xff, 0xff, 0xff]
+				};
+				draw_text(
+					&mut self.frame_buffer,
+					font_sheet,
+					Rect {
+						top_left: (win_w as i32 / 2 - text_dims.w / 2, win_h as i32 / 2).into(),
+						dims: text_dims,
+					},
+					color,
+					&text,
+				);
+
+				let text = "Options".to_uppercase();
+				let text_dims = text_box(text.len(), 4) * 3;
+				let color = if choice == MenuChoice::Options {
+					[0xff, 0x00, 0x00, 0xff]
+				} else {
+					[0xff, 0xff, 0xff, 0xff]
+				};
+				draw_text(
+					&mut self.frame_buffer,
+					font_sheet,
+					Rect {
+						top_left: (win_w as i32 / 2 - text_dims.w / 2, win_h as i32 / 2 + 100).into(),
+						dims: text_dims,
+					},
+					color,
+					&text,
+				);
+
+				let text = "Quit".to_uppercase();
+				let text_dims = text_box(text.len(), 4) * 3;
+				let color = if choice == MenuChoice::Quit {
+					[0xff, 0x00, 0x00, 0xff]
+				} else {
+					[0xff, 0xff, 0xff, 0xff]
+				};
+				draw_text(
+					&mut self.frame_buffer,
+					font_sheet,
+					Rect {
+						top_left: (win_w as i32 / 2 - text_dims.w / 2, win_h as i32 / 2 + 200).into(),
+						dims: text_dims,
+					},
+					color,
+					&text,
+				);
+			},
+			MenuChoice::Level(id) => {
+				let text = "Level Selection".to_uppercase();
+				let text_dims = text_box(text.len(), 4) * 5;
+				draw_text(
+					&mut self.frame_buffer,
+					font_sheet,
+					Rect {
+						top_left: (win_w as i32 / 2 - text_dims.w / 2, win_h as i32 / 10).into(),
+						dims: text_dims,
+					},
+					[0xff, 0xff, 0xff, 0xff],
+					&text,
+				);
+
+				for (i, level) in self.levels.iter().enumerate() {
+					let text = &level.name.to_uppercase();
+					let text_dims = text_box(text.len(), 4) * 3;
+					let color = if i as u16 == id {
+						[0xff, 0x00, 0x00, 0xff]
+					} else {
+						[0xff, 0xff, 0xff, 0xff]
+					};
+					draw_text(
+						&mut self.frame_buffer,
+						font_sheet,
+						Rect {
+							top_left: (
+								win_w as i32 / 2 - text_dims.w / 2,
+								win_h as i32 / 2 + 100 * i as i32,
+							)
+								.into(),
+							dims: text_dims,
+						},
+						color,
+						text,
+					);
+				}
+			},
+			// TODO: Implement options menu
+			MenuChoice::Resolution => {
+				let text = "Resolution".to_uppercase();
+				let text_dims = text_box(text.len(), 4) * 5;
+				draw_text(
+					&mut self.frame_buffer,
+					font_sheet,
+					Rect {
+						top_left: (win_w as i32 / 2 - text_dims.w / 2, win_h as i32 / 10).into(),
+						dims: text_dims,
+					},
+					[0xff, 0xff, 0xff, 0xff],
+					&text,
+				);
+
+				let res_choice = &mut self.config.resolution_choice;
+				for (i, res) in DRAW_CONSTANTS.sizes.iter().enumerate() {
+					let text = format!("{:4} X {:4}", res.w, res.h);
+					let text_dims = text_box(text.len(), 4) * 3;
+					let color = if i as u8 == *res_choice {
+						[0xff, 0x00, 0x00, 0xff]
+					} else {
+						[0xff, 0xff, 0xff, 0xff]
+					};
+					draw_text(
+						&mut self.frame_buffer,
+						font_sheet,
+						Rect {
+							top_left: (
+								win_w as i32 / 2 - text_dims.w / 2,
+								win_h as i32 / 2 + 100 * i as i32,
+							)
+								.into(),
+							dims: text_dims,
+						},
+						color,
+						&text,
+					);
+				}
+			},
+		}
 	}
 }
 

@@ -4,7 +4,7 @@ use std::{
 	cmp::PartialOrd,
 	convert::{From, Into},
 	fmt::Debug,
-	ops::Add,
+	ops::{Add, Div, Mul},
 };
 use winit::dpi::PhysicalSize;
 
@@ -25,6 +25,27 @@ impl<T: Copy + NumCast> Dimensions<T> {
 		Dimensions { w: num::cast(self.w).unwrap(), h: num::cast(self.h).unwrap() }
 	}
 }
+
+macro_rules! dims_operations {
+	($operand: ty, $dim_type: ty) => {
+		impl Mul<$operand> for Dimensions<$dim_type> {
+			type Output = Dimensions<$dim_type>;
+			fn mul(self, rhs: $operand) -> Dimensions<$dim_type> {
+				Dimensions { w: self.w * rhs, h: self.h * rhs }
+			}
+		}
+		impl Div<$operand> for Dimensions<$dim_type> {
+			type Output = Dimensions<$dim_type>;
+			fn div(self, rhs: $operand) -> Dimensions<$dim_type> {
+				Dimensions { w: self.w / rhs, h: self.h / rhs }
+			}
+		}
+	};
+}
+
+dims_operations!(u32, u32);
+dims_operations!(f32, f32);
+dims_operations!(i32, i32);
 
 /// Creates a Dimension object for text rendering
 pub fn text_box(str_len: usize, scale: u32) -> Dimensions<i32> {

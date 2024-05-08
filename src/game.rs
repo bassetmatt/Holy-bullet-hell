@@ -8,26 +8,35 @@ use winit::{event::ElementState, event_loop::ActiveEventLoop, keyboard::Key, win
 
 use crate::{
 	coords::Dimensions,
-	draw::{create_window, FrameBuffer, Sheets, DRAW_CONSTANTS},
+	draw::{create_window, FrameBuffer, ResizableWindow, Sheets, DRAW_CONSTANTS},
 	gameplay::{Cooldown, EnemyType, Event, EventType, World},
 };
 
-enum RunState {
-	_Playing,
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum RunState {
+	Playing,
 	_Paused,
-	_Menu(MenuChoice),
+	Menu(MenuChoice),
 	_GameOver,
+	Quitting,
 }
 
-enum MenuChoice {
-	_Play,
-	_Options,
-	_Quit,
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum MenuChoice {
+	// Main menu
+	Play,
+	Options,
+	Quit,
+	// Play menu
+	// Id of the level
+	Level(u16),
+	// Options menu
+	Resolution,
 }
 
-struct Level {
-	_id: u32,
-	name: String,
+pub struct Level {
+	pub id: u32,
+	pub name: String,
 	event_list: Vec<Event>,
 }
 
@@ -36,7 +45,7 @@ impl Level {
 	fn level_from_file(game: &mut Game, level_file: &str) {
 		let level_raw_data = fs::read_to_string(level_file).unwrap();
 		let mut level = Level {
-			_id: game.levels.len() as u32,
+			id: game.levels.len() as u32,
 			event_list: vec![],
 			name: String::new(),
 		};
@@ -115,7 +124,7 @@ pub struct Config {
 
 impl Config {
 	fn new() -> Config {
-		Config { resolution_choice: 0, _fullscreen: false, scale4: 4 }
+		Config { resolution_choice: 1, _fullscreen: false, scale4: 4 }
 	}
 }
 
@@ -160,13 +169,13 @@ impl GameInfo {
 }
 
 pub struct Game {
-	_state: RunState,
+	pub state: RunState,
 	pub world: Option<World>,
 	pub inputs: Inputs,
 	pub window: Window,
 	pub frame_buffer: FrameBuffer,
 	pub sheets: Sheets,
-	levels: Vec<Level>,
+	pub levels: Vec<Level>,
 	pub config: Config,
 	pub infos: GameInfo,
 }
@@ -176,7 +185,7 @@ impl Game {
 		env_logger::init();
 		let window = create_window(event_loop);
 		Game {
-			_state: RunState::_Playing,
+			state: RunState::Menu(MenuChoice::Play),
 			world: None,
 			inputs: Inputs::new(),
 			frame_buffer: FrameBuffer::new(&window),
@@ -199,18 +208,104 @@ impl Game {
 				Level::level_from_file(self, path.to_str().unwrap());
 			}
 		}
+		// Sort inversely by id
+		// TODO: Have better sorting function?
+		self.levels.sort_by_key(|x| u32::MAX - x.id);
 	}
 
-	pub fn process_input(&mut self, state: &ElementState, key: &Key) {
+	fn menu_key_handling(&mut self, key_state: &ElementState, key: &Key) {
+		use winit::keyboard::NamedKey::*;
+		if key_state == &ElementState::Released {
+			return;
+		}
+		let menu_choice = match self.state {
+			RunState::Menu(choice) => choice,
+			_ => panic!("Not in menu state"),
+		};
+		let is_main_menu = matches!(
+			menu_choice,
+			MenuChoice::Play | MenuChoice::Options | MenuChoice::Quit
+		);
+		match key {
+			Key::Named(Escape) => {
+				if is_main_menu {
+					self.state = RunState::Menu(MenuChoice::Quit);
+				}
+				if menu_choice == MenuChoice::Resolution {
+					self.state = RunState::Menu(MenuChoice::Options);
+				} else if matches!(menu_choice, MenuChoice::Level(_)) {
+					self.state = RunState::Menu(MenuChoice::Play);
+				}
+			},
+			Key::Named(ArrowDown) => {
+				if is_main_menu {
+					self.state = RunState::Menu(match menu_choice {
+						MenuChoice::Play => MenuChoice::Options,
+						MenuChoice::Options => MenuChoice::Quit,
+						MenuChoice::Quit => MenuChoice::Play,
+						_ => panic!("Invalid menu choice"),
+					})
+				} else if let MenuChoice::Level(id) = menu_choice {
+					let id = (id + 1) % self.levels.len() as u16;
+					self.state = RunState::Menu(MenuChoice::Level(id));
+				} else if menu_choice == MenuChoice::Resolution {
+					let res_choice = &mut self.config.resolution_choice;
+					*res_choice = (*res_choice + 1) % DRAW_CONSTANTS.sizes.len() as u8;
+					self.window.request_window_resize(*res_choice);
+				}
+			},
+			Key::Named(ArrowUp) => {
+				if is_main_menu {
+					self.state = RunState::Menu(match menu_choice {
+						MenuChoice::Play => MenuChoice::Quit,
+						MenuChoice::Options => MenuChoice::Play,
+						MenuChoice::Quit => MenuChoice::Options,
+						_ => panic!("Invalid menu choice"),
+					})
+				} else if let MenuChoice::Level(id) = menu_choice {
+					let id = (id - 1) % self.levels.len() as u16;
+					self.state = RunState::Menu(MenuChoice::Level(id));
+				} else if menu_choice == MenuChoice::Resolution {
+					let res_choice = &mut self.config.resolution_choice;
+					*res_choice = (*res_choice - 1) % DRAW_CONSTANTS.sizes.len() as u8;
+					self.window.request_window_resize(*res_choice);
+				}
+			},
+			Key::Named(Enter) => match menu_choice {
+				MenuChoice::Play => {
+					self.state = RunState::Menu(MenuChoice::Level(0));
+				},
+				MenuChoice::Options => {
+					self.state = RunState::Menu(MenuChoice::Resolution);
+				},
+				MenuChoice::Quit => {
+					self.state = RunState::Quitting;
+				},
+				MenuChoice::Level(id) => {
+					self.state = RunState::Playing;
+					self.start_level(id as u32);
+				},
+				MenuChoice::Resolution => {
+					self.state = RunState::Menu(MenuChoice::Options);
+				},
+			},
+			_ => {},
+		}
+	}
+	pub fn process_input(&mut self, key_state: &ElementState, key: &Key) {
 		use winit::keyboard::NamedKey::*;
 		// TODO: Some day, use data structures for keys
+
+		if matches!(self.state, RunState::Menu(_)) {
+			self.menu_key_handling(key_state, key);
+		}
 		match key {
-			Key::Named(ArrowUp) => self.inputs.up = matches!(state, ElementState::Pressed),
-			Key::Named(ArrowDown) => self.inputs.down = matches!(state, ElementState::Pressed),
-			Key::Named(ArrowLeft) => self.inputs.left = matches!(state, ElementState::Pressed),
-			Key::Named(ArrowRight) => self.inputs.right = matches!(state, ElementState::Pressed),
+			Key::Named(ArrowUp) => self.inputs.up = matches!(key_state, ElementState::Pressed),
+			Key::Named(ArrowDown) => self.inputs.down = matches!(key_state, ElementState::Pressed),
+			Key::Named(ArrowLeft) => self.inputs.left = matches!(key_state, ElementState::Pressed),
+			Key::Named(ArrowRight) => self.inputs.right = matches!(key_state, ElementState::Pressed),
 			Key::Character(key) if key == &SmolStr::new("x") => {
-				self.inputs.shoot = matches!(state, ElementState::Pressed)
+				self.inputs.shoot = matches!(key_state, ElementState::Pressed)
 			},
 			_ => {},
 		}
