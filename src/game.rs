@@ -6,9 +6,11 @@ use std::{
 };
 use winit::{event::ElementState, event_loop::ActiveEventLoop, keyboard::Key, window::Window};
 
-use crate::coords::Dimensions;
-use crate::draw::{create_window, FrameBuffer, Sheets, DRAW_CONSTANTS};
-use crate::gameplay::{Cooldown, EnemyType, Event, EventType, World};
+use crate::{
+	coords::Dimensions,
+	draw::{create_window, FrameBuffer, Sheets, DRAW_CONSTANTS},
+	gameplay::{Cooldown, EnemyType, Event, EventType, World},
+};
 
 enum RunState {
 	_Playing,

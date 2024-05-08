@@ -1,7 +1,3 @@
-use crate::{
-	coords::{collide_rectangle, CenteredBox, Dimensions, RectF},
-	game::{Game, Inputs},
-};
 use cgmath::{InnerSpace, Point2, Vector2, Zero};
 use std::{
 	collections::HashMap,
@@ -9,9 +5,12 @@ use std::{
 };
 use winit::event_loop::ActiveEventLoop;
 
-pub const DT_60: f32 = 1. / 60.;
+use crate::{
+	coords::{collide_rectangle, CenteredBox, Dimensions, RectF},
+	game::{Game, Inputs},
+};
 
-const PROJ_SIZE: Dimensions<f32> = Dimensions { w: 10., h: 10. };
+pub const DT_60: f32 = 1. / 60.;
 
 pub struct Cooldown {
 	last_emit: Option<Instant>,
@@ -205,6 +204,7 @@ pub enum ProjType {
 	PlayerShoot,
 }
 
+const PROJ_SIZE: Dimensions<f32> = Dimensions { w: 10., h: 10. };
 pub struct Projectile {
 	pub pos: Point2<f32>,
 	vel: Vector2<f32>,
