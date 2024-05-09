@@ -50,9 +50,6 @@ impl ApplicationHandler for EventLoopState {
 					}
 				}
 				game.process_input(&state, logical_key);
-				if game.state == RunState::Quitting {
-					event_loop.exit();
-				}
 			},
 			_ => {},
 		}
@@ -60,9 +57,7 @@ impl ApplicationHandler for EventLoopState {
 
 	fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
 		let game = self.game_opt.as_mut().unwrap();
-		// TODO: Handle game state
 		// Computes time elapsed
-		// TODO: Can I swap the 2 last lines ??
 		game.infos.dt = Instant::elapsed(&game.infos.t);
 		game.infos.t = Instant::now();
 		game.update_fps();
@@ -84,6 +79,9 @@ impl ApplicationHandler for EventLoopState {
 				game.infos.update();
 				game.redraw();
 				game.render();
+			},
+			RunState::Quitting => {
+				event_loop.exit();
 			},
 			_ => {},
 		}
