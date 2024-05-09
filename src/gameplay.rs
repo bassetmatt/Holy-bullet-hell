@@ -11,7 +11,7 @@ use crate::{
 };
 
 pub const DT_60: f32 = 1. / 60.;
-
+#[derive(Clone, Debug)]
 pub struct Cooldown {
 	last_emit: Option<Instant>,
 	cooldown: Duration,
@@ -40,6 +40,7 @@ impl Cooldown {
 	}
 }
 
+#[derive(Clone, Debug)]
 pub struct Player {
 	pub pos: Point2<f32>,
 	vel: Vector2<f32>,
@@ -104,6 +105,7 @@ pub enum EnemyType {
 	Sniper,
 }
 
+#[derive(Clone, Debug)]
 enum EnemyState {
 	NotSpawned,
 	OnScreen(fn(&mut Enemy, RectF)),
@@ -111,6 +113,7 @@ enum EnemyState {
 	Dead,
 }
 
+#[derive(Clone, Debug)]
 pub struct Enemy {
 	pub pos: Point2<f32>,
 	vel: Vector2<f32>,
@@ -198,6 +201,7 @@ impl Enemy {
 	}
 }
 
+#[derive(Clone, Debug)]
 pub enum ProjType {
 	Basic,
 	Aimed,
@@ -205,6 +209,7 @@ pub enum ProjType {
 }
 
 const PROJ_SIZE: Dimensions<f32> = Dimensions { w: 10., h: 10. };
+#[derive(Clone, Debug)]
 pub struct Projectile {
 	pub pos: Point2<f32>,
 	vel: Vector2<f32>,
@@ -227,7 +232,7 @@ pub enum EventType {
 	_SpawnBoss(Point2<f32>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Event {
 	pub id: u32,
 	pub time: Option<Instant>,
@@ -236,6 +241,7 @@ pub struct Event {
 	pub variant: EventType,
 }
 
+#[derive(Clone, Debug)]
 pub struct EventSystem {
 	list: Vec<Event>,
 	history: HashMap<u32, Instant>,
@@ -262,6 +268,7 @@ impl EventSystem {
 	}
 }
 
+#[derive(Clone, Debug)]
 pub struct World {
 	pub player: Player,
 	pub projectiles: Vec<Projectile>,

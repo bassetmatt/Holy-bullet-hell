@@ -53,6 +53,12 @@ macro_rules! dims_operations {
 					Dimensions { w: self.w / rhs.0, h: self.h / rhs.1 }
 				}
 			}
+			impl Mul<Dimensions<$dim_type>> for Dimensions<$dim_type> {
+				type Output = Dimensions<$dim_type>;
+				fn mul(self, rhs: Dimensions<$dim_type>) -> Dimensions<$dim_type> {
+					Dimensions { w: self.w * rhs.w, h: self.h * rhs.h }
+				}
+			}
 		)*
 	};
 }
@@ -62,7 +68,7 @@ dims_operations!(u32, f32, i32);
 /// Creates a Dimension object for text rendering
 pub fn text_box(str_len: usize, scale: u32) -> Dimensions<i32> {
 	use crate::draw::CHAR_DIMS;
-	Dimensions { w: str_len as u32 * CHAR_DIMS.w * scale, h: CHAR_DIMS.h * scale }.into_dim()
+	Dimensions { w: str_len as i32, h: 1 } * CHAR_DIMS.into_dim::<i32>() * scale as i32
 }
 
 macro_rules! into_rect_impl {
@@ -100,11 +106,12 @@ macro_rules! dim_physical_size_equivalent {
 dim_physical_size_equivalent!(u32);
 dim_physical_size_equivalent!(i32);
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Rect<T: Copy> {
 	pub top_left: Point2<T>,
 	pub dims: Dimensions<T>,
 }
+
 #[allow(dead_code)]
 pub type RectF = Rect<f32>;
 pub type RectI = Rect<i32>;

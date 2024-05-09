@@ -15,6 +15,7 @@ use crate::{
 	gameplay::{Enemy, EnemyType, Player, ProjType, Projectile, World},
 };
 
+#[derive(Debug)]
 pub struct DrawConstants {
 	interface_begin4: u32,
 	pub sizes: [Dimensions<u32>; 3],
@@ -31,6 +32,7 @@ pub const DRAW_CONSTANTS: DrawConstants = DrawConstants {
 
 pub const N_SIZES: u8 = DRAW_CONSTANTS.sizes.len() as u8;
 
+#[derive(Debug)]
 struct ColorPalette {
 	bg: [u8; 4],
 	bg_ui: [u8; 4],
@@ -45,6 +47,7 @@ const COLORS: ColorPalette = ColorPalette {
 	menu_text: [0xff, 0xff, 0xff, 0xff],
 };
 
+#[derive(Debug)]
 pub struct Sheets {
 	font: DynamicImage,
 	spritesheet: DynamicImage,
@@ -90,6 +93,7 @@ pub fn create_window(event_loop: &ActiveEventLoop) -> Window {
 	event_loop.create_window(window_attributes).unwrap()
 }
 
+#[derive(Debug)]
 pub struct FrameBuffer {
 	pub buffer: Pixels,
 	pub dims: Dimensions<u32>,
@@ -339,6 +343,7 @@ fn char_position(c: char) -> Option<(u32, u32)> {
 	}
 }
 
+#[derive(Clone, Debug)]
 struct SpriteCoords {
 	sheet_pos: Point2<u32>,
 	dims: Dimensions<u32>,

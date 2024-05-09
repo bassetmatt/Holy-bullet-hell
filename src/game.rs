@@ -13,6 +13,11 @@ use crate::{
 	gameplay::{Cooldown, EnemyType, Event, EventType, World},
 };
 
+const WORLD_SIZE: Dimensions<f32> = Dimensions {
+	w: DRAW_CONSTANTS.sizes[0].w as f32 * 0.75,
+	h: DRAW_CONSTANTS.sizes[0].h as f32,
+};
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum RunState {
 	Playing,
@@ -35,6 +40,7 @@ pub enum MenuChoice {
 	Resolution,
 }
 
+#[derive(Clone, Debug)]
 pub struct Level {
 	pub id: u32,
 	pub name: Rc<String>,
@@ -43,7 +49,7 @@ pub struct Level {
 
 pub const LEVEL_REF: u32 = u32::MAX;
 impl Level {
-	fn level_from_file(game: &mut Game, level_file: &str) {
+	fn level_parser(game: &mut Game, level_file: &str) {
 		let level_raw_data = fs::read_to_string(level_file).unwrap();
 		let mut level = Level {
 			id: game.levels.len() as u32,
@@ -100,7 +106,13 @@ impl Level {
 	}
 }
 
-#[derive(Default)]
+impl PartialEq for Level {
+	fn eq(&self, other: &Self) -> bool {
+		self.id == other.id
+	}
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct Inputs {
 	pub left: bool,
 	pub right: bool,
@@ -116,6 +128,7 @@ impl Inputs {
 	}
 }
 
+#[derive(Clone, Debug)]
 pub struct Config {
 	pub resolution_choice: u8,
 	pub _fullscreen: bool,
@@ -129,9 +142,10 @@ impl Config {
 	}
 }
 
+#[derive(Clone, Debug)]
 pub struct GameInfo {
 	_game_begin: Instant,
-	_level_begin: Option<Instant>,
+	level_begin: Option<Instant>,
 	frame_count: u64,
 	pub fps: u32,
 	fps_cooldown: Cooldown,
@@ -143,7 +157,7 @@ impl GameInfo {
 	fn new() -> GameInfo {
 		GameInfo {
 			_game_begin: Instant::now(),
-			_level_begin: None,
+			level_begin: None,
 			frame_count: 0,
 			fps: 0,
 			fps_cooldown: Cooldown::with_secs(0.1),
@@ -153,7 +167,7 @@ impl GameInfo {
 	}
 
 	fn start_level(&mut self) {
-		self._level_begin = Some(Instant::now());
+		self.level_begin = Some(Instant::now());
 	}
 
 	pub fn update(&mut self) {
@@ -165,10 +179,11 @@ impl GameInfo {
 	}
 
 	pub fn _since_level_begin(&self) -> Duration {
-		Instant::elapsed(&self._level_begin.unwrap())
+		Instant::elapsed(&self.level_begin.unwrap())
 	}
 }
 
+#[derive(Debug)]
 pub struct Game {
 	pub state: RunState,
 	pub world: Option<World>,
@@ -206,7 +221,7 @@ impl Game {
 		for level in fs::read_dir(level_dir).unwrap() {
 			let path = level.unwrap().path();
 			if path.is_file() && path.extension().is_some_and(|ext| ext == "hbh") {
-				Level::level_from_file(self, path.to_str().unwrap());
+				Level::level_parser(self, path.to_str().unwrap());
 			}
 		}
 		// Sort inversely by id
@@ -317,10 +332,7 @@ impl Game {
 		self.infos.start_level();
 		// The wolrd size is fixed as the lowest resolution and the graphics are scaled up
 		let new_world = World::start(
-			Dimensions {
-				w: DRAW_CONSTANTS.sizes[0].w as f32 * 0.75,
-				h: DRAW_CONSTANTS.sizes[0].h as f32,
-			},
+			WORLD_SIZE,
 			self.levels.get(id as usize).unwrap().event_list.clone(),
 		);
 		self.world = Some(new_world);
