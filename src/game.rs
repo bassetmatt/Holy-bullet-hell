@@ -2,6 +2,7 @@ use smol_str::SmolStr;
 use std::{
 	fs,
 	path::Path,
+	rc::Rc,
 	time::{Duration, Instant},
 };
 use winit::{event::ElementState, event_loop::ActiveEventLoop, keyboard::Key, window::Window};
@@ -36,7 +37,7 @@ pub enum MenuChoice {
 
 pub struct Level {
 	pub id: u32,
-	pub name: String,
+	pub name: Rc<String>,
 	event_list: Vec<Event>,
 }
 
@@ -47,7 +48,7 @@ impl Level {
 		let mut level = Level {
 			id: game.levels.len() as u32,
 			event_list: vec![],
-			name: String::new(),
+			name: Rc::new(String::new()),
 		};
 
 		let meta_data = level_raw_data
@@ -58,7 +59,7 @@ impl Level {
 			let data = data.split_once(char::is_whitespace).unwrap();
 			match data.0 {
 				"title" => {
-					level.name = data.1.into();
+					level.name = Rc::new(data.1.into());
 				},
 				data => {
 					unimplemented!("'{data}' keyword doesn't exist")
@@ -292,6 +293,7 @@ impl Game {
 			_ => {},
 		}
 	}
+
 	pub fn process_input(&mut self, key_state: &ElementState, key: &Key) {
 		use winit::keyboard::NamedKey::*;
 		// TODO: Some day, use data structures for keys

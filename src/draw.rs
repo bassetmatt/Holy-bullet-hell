@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use cgmath::{Point2, Vector2};
 use image::{DynamicImage, GenericImageView, ImageFormat};
 use pixels::{Pixels, SurfaceTexture, TextureError};
@@ -166,14 +168,8 @@ impl Game {
 		self.config.scale4 = 4 * size.width / DRAW_CONSTANTS.sizes[0].w;
 	}
 
-	pub fn _toggle_fullscreen(&mut self) {
-		let window = &self.window;
-		if window.fullscreen().is_some() {
-			window.set_fullscreen(None);
-		} else {
-			let fs = Fullscreen::Borderless(window.current_monitor());
-			window.set_fullscreen(Some(fs));
-		}
+	pub fn render(&mut self) {
+		self.frame_buffer.buffer.render().unwrap();
 	}
 
 	pub fn draw_in_game(&mut self) {
@@ -216,8 +212,10 @@ impl Game {
 	}
 
 	pub fn draw_menu(&mut self, choice: MenuChoice) {
+		// Background color
 		self.frame_buffer.fill_with_color(COLORS.bg);
 
+		// Base positions for the menu entries
 		let (base_x, base_y, title_y) = {
 			let frame_buffer_dims = self.frame_buffer.dims;
 			let win_w = frame_buffer_dims.w;
@@ -226,6 +224,7 @@ impl Game {
 		};
 
 		match choice {
+			// Main menu
 			MenuChoice::Play | MenuChoice::Quit | MenuChoice::Options => {
 				self.draw_menu_entry("Holy Bullet Hell", (5, 5), (base_x, title_y).into(), false);
 
@@ -248,10 +247,11 @@ impl Game {
 					choice == MenuChoice::Quit,
 				);
 			},
+			// Level selection menu
 			MenuChoice::Level(id) => {
 				self.draw_menu_entry("Level Selection", (5, 5), (base_x, title_y).into(), false);
 				// Gets the level list while dropping the mutable borrowing of `self`
-				let level_list: Vec<(u32, String)> =
+				let level_list: Vec<(u32, Rc<String>)> =
 					self.levels.iter().map(|x| (x.id, x.name.clone())).collect();
 
 				for (i, entry) in level_list.iter().enumerate() {
@@ -263,7 +263,7 @@ impl Game {
 					);
 				}
 			},
-
+			// Options menu
 			MenuChoice::Resolution => {
 				self.draw_menu_entry("Resolution", (5, 5), (base_x, title_y).into(), false);
 
@@ -278,10 +278,6 @@ impl Game {
 				}
 			},
 		}
-	}
-
-	pub fn render(&mut self) {
-		self.frame_buffer.buffer.render().unwrap();
 	}
 }
 
