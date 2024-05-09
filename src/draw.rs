@@ -9,7 +9,7 @@ use winit::{
 
 use crate::{
 	coords::{text_box, Dimensions, Rect, RectI},
-	game::{Config, Game, GameInfo, Level, MenuChoice},
+	game::{Config, Game, GameInfo, MenuChoice},
 	gameplay::{Enemy, EnemyType, Player, ProjType, Projectile, World},
 };
 
@@ -250,9 +250,13 @@ impl Game {
 			},
 			MenuChoice::Level(id) => {
 				self.draw_menu_entry("Level Selection", (5, 5), (base_x, title_y).into(), false);
-				for (i, level) in self.levels.iter().enumerate() {
+				// Gets the level list while dropping the mutable borrowing of `self`
+				let level_list: Vec<(u32, String)> =
+					self.levels.iter().map(|x| (x.id, x.name.clone())).collect();
+
+				for (i, entry) in level_list.iter().enumerate() {
 					self.draw_menu_entry(
-						&level.name,
+						&entry.1,
 						(3, 3),
 						(base_x, base_y + 100 * i as i32).into(),
 						id == i as u16,
