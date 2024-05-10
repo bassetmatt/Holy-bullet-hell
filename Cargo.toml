@@ -19,3 +19,4 @@ winit = { version = "0.30", default-features = false, features = [
    "wayland-csd-adwaita",
 ] }
 smol_str = "0.2"
+kira = "0.8.7"
