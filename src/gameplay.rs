@@ -8,6 +8,7 @@ use winit::event_loop::ActiveEventLoop;
 use crate::{
 	coords::{collide_rectangle, CenteredBox, Dimensions, RectF},
 	game::{Game, Inputs},
+	sound::SoundBase,
 };
 
 pub const DT_60: f32 = 1. / 60.;
@@ -350,7 +351,7 @@ impl Game {
 				variant: ProjType::PlayerShoot,
 			};
 			world.projectiles.push(proj);
-			self.audio.play_sound(0);
+			self.audio.play_sound(SoundBase::PlayerShoot);
 			player.new_shoot.reset();
 		}
 
