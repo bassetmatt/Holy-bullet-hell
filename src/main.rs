@@ -3,6 +3,7 @@ mod draw;
 mod game;
 mod gameloop;
 mod gameplay;
+mod sound;
 
 use crate::gameloop::game_run;
 

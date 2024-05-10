@@ -350,6 +350,7 @@ impl Game {
 				variant: ProjType::PlayerShoot,
 			};
 			world.projectiles.push(proj);
+			self.audio.play_sound(0);
 			player.new_shoot.reset();
 		}
 

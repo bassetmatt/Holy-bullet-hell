@@ -11,6 +11,7 @@ use crate::{
 	coords::Dimensions,
 	draw::{create_window, FrameBuffer, ResizableWindow, Sheets, DRAW_CONSTANTS},
 	gameplay::{Cooldown, EnemyType, Event, EventType, World},
+	sound::Audio,
 };
 
 const WORLD_SIZE: Dimensions<f32> = Dimensions {
@@ -183,7 +184,6 @@ impl GameInfo {
 	}
 }
 
-#[derive(Debug)]
 pub struct Game {
 	pub state: RunState,
 	pub world: Option<World>,
@@ -191,6 +191,7 @@ pub struct Game {
 	pub window: Window,
 	pub frame_buffer: FrameBuffer,
 	pub sheets: Sheets,
+	pub audio: Audio,
 	pub levels: Vec<Level>,
 	pub config: Config,
 	pub infos: GameInfo,
@@ -207,6 +208,7 @@ impl Game {
 			frame_buffer: FrameBuffer::new(&window),
 			window,
 			sheets: Sheets::load(),
+			audio: Audio::new(),
 			levels: vec![],
 			config: Config::new(),
 			infos: GameInfo::new(),
