@@ -4,7 +4,7 @@ use std::{
 	cmp::PartialOrd,
 	convert::{From, Into},
 	fmt::Debug,
-	ops::{Add, Div, Mul},
+	ops::{Add, Div, Mul, Sub},
 };
 use winit::dpi::PhysicalSize;
 
@@ -26,49 +26,87 @@ impl<T: Copy + NumCast> Dimensions<T> {
 	}
 }
 
-macro_rules! dims_operations {
-	($($dim_type: ty), +) => {
-		$(
-			impl Mul<$dim_type> for Dimensions<$dim_type> {
-				type Output = Dimensions<$dim_type>;
-				fn mul(self, rhs: $dim_type) -> Dimensions<$dim_type> {
-					Dimensions { w: self.w * rhs, h: self.h * rhs }
-				}
+/// Implements a given operation for Dimensions
+///
+/// Basic usage:
+/// ```rust
+/// impl_operation!(Add, add, +, u32, u32);
+/// ```
+macro_rules! impl_operation {
+	($trait: ident, $fun: ident, $symb: tt, $rhs_t: ty, $lhs_t: ty) => {
+		// Implementing the given operation when rhs is a scalar
+		#[doc = concat!("Implementation of ", stringify!($trait), " for Dimensions when rhs is a scalar")]
+		impl $trait<$rhs_t> for Dimensions<$lhs_t> {
+			type Output = Dimensions<$lhs_t>;
+			#[doc = concat!("Implementation of ", stringify!($fun) , " for Dimensions when rhs is a scalar")]
+			fn $fun(self, rhs: $rhs_t) -> Dimensions<$lhs_t> {
+				Dimensions { w: self.w $symb rhs as $lhs_t, h: self.h $symb rhs as $lhs_t }
 			}
-			impl Div<$dim_type> for Dimensions<$dim_type> {
-				type Output = Dimensions<$dim_type>;
-				fn div(self, rhs: $dim_type) -> Dimensions<$dim_type> {
-					Dimensions { w: self.w / rhs, h: self.h / rhs }
-				}
+		}
+		// Implementing the given operation when rhs is a tuple
+		#[doc = concat!("Implementation of ", stringify!($trait), " for Dimensions when rhs is a tuple")]
+		impl $trait<($rhs_t, $rhs_t)> for Dimensions<$lhs_t> {
+			type Output = Dimensions<$lhs_t>;
+			#[doc = concat!("Implementation of ", stringify!($fun) , " for Dimensions when rhs is a tuple")]
+			fn $fun(self, rhs: ($rhs_t, $rhs_t)) -> Dimensions<$lhs_t> {
+				Dimensions { w: self.w $symb rhs.0 as $lhs_t, h: self.h $symb rhs.1 as $lhs_t }
 			}
-			impl Mul<($dim_type, $dim_type)> for Dimensions<$dim_type> {
-				type Output = Dimensions<$dim_type>;
-				fn mul(self, rhs: ($dim_type, $dim_type)) -> Dimensions<$dim_type> {
-					Dimensions { w: self.w * rhs.0, h: self.h * rhs.1 }
-				}
+		}
+		// Implementing the given operation when rhs is another Dimensions
+		#[doc = concat!("Implementation of ", stringify!($trait), " for Dimensions when rhs is a Dimension")]
+		impl $trait<Dimensions<$rhs_t>> for Dimensions<$lhs_t> {
+			type Output = Dimensions<$lhs_t>;
+			#[doc = concat!("Implementation of ", stringify!($fun), " for Dimensions when rhs is a Dimension")]
+			fn $fun(self, rhs: Dimensions<$rhs_t>) -> Dimensions<$lhs_t> {
+				Dimensions { w: self.w $symb rhs.w as $lhs_t, h: self.h $symb rhs.h as $lhs_t }
 			}
-			impl Div<($dim_type, $dim_type)> for Dimensions<$dim_type> {
-				type Output = Dimensions<$dim_type>;
-				fn div(self, rhs: ($dim_type, $dim_type)) -> Dimensions<$dim_type> {
-					Dimensions { w: self.w / rhs.0, h: self.h / rhs.1 }
-				}
-			}
-			impl Mul<Dimensions<$dim_type>> for Dimensions<$dim_type> {
-				type Output = Dimensions<$dim_type>;
-				fn mul(self, rhs: Dimensions<$dim_type>) -> Dimensions<$dim_type> {
-					Dimensions { w: self.w * rhs.w, h: self.h * rhs.h }
-				}
-			}
-		)*
+		}
 	};
 }
 
-dims_operations!(u32, f32, i32);
+// Implementing operations for Dimensions
+// Recursively implement operations for all types in the list
+macro_rules! dims_operations {
+	// Empty case
+	() => {};
+	// Recursive case
+	(($lhs_t:ty, $rhs_t:ty), $($rest:tt)*) => {
+		impl_operation!(Add, add, +, $rhs_t, $lhs_t);
+		impl_operation!(Sub, sub, -, $rhs_t, $lhs_t);
+		impl_operation!(Mul, mul, *, $rhs_t, $lhs_t);
+		impl_operation!(Div, div, /, $rhs_t, $lhs_t);
+		// Recursion
+		dims_operations!($($rest)*);
+	};
+}
+
+dims_operations!((u32, u32), (f32, f32), (i32, i32),);
 
 /// Creates a Dimension object for text rendering
 pub fn text_box(str_len: usize, scale: u32) -> Dimensions<i32> {
 	use crate::draw::CHAR_DIMS;
 	Dimensions { w: str_len as i32, h: 1 } * CHAR_DIMS.into_dim::<i32>() * scale as i32
+}
+
+impl RectI {
+	pub fn life_bar_full(pos: Point2<f32>, dims: Dimensions<f32>) -> RectI {
+		RectI {
+			top_left: Point2 {
+				x: (pos.x - dims.w / 2.).round() as i32,
+				y: (pos.y - dims.h / 2.).round() as i32 - 8,
+			},
+			dims: Dimensions { w: dims.w.round() as i32, h: 8 },
+		}
+	}
+	pub fn life_bar(pos: Point2<f32>, dims: Dimensions<f32>, hp_ratio: f32) -> RectI {
+		RectI {
+			top_left: Point2 {
+				x: (pos.x - dims.w / 2.).round() as i32,
+				y: (pos.y - dims.h / 2.).round() as i32 - 8,
+			},
+			dims: Dimensions { w: (dims.w * hp_ratio).round() as i32, h: 8 },
+		}
+	}
 }
 
 macro_rules! into_rect_impl {
@@ -89,22 +127,23 @@ into_rect_impl!(u32, i32);
 into_rect_impl!(f32, f32);
 
 macro_rules! dim_physical_size_equivalent {
-	($type: ty) => {
-		impl From<PhysicalSize<u32>> for Dimensions<$type> {
-			fn from(size: PhysicalSize<u32>) -> Dimensions<$type> {
-				Dimensions { w: size.width as $type, h: size.height as $type }
+	($($dim_t: ty), +) => {
+		$(
+			impl From<PhysicalSize<u32>> for Dimensions<$dim_t> {
+				fn from(size: PhysicalSize<u32>) -> Dimensions<$dim_t> {
+					Dimensions { w: size.width as $dim_t, h: size.height as $dim_t }
+				}
 			}
-		}
-		impl From<Dimensions<$type>> for PhysicalSize<u32> {
-			fn from(size: Dimensions<$type>) -> PhysicalSize<u32> {
-				PhysicalSize { width: size.w as u32, height: size.h as u32 }
+			impl From<Dimensions<$dim_t>> for PhysicalSize<u32> {
+				fn from(size: Dimensions<$dim_t>) -> PhysicalSize<u32> {
+					PhysicalSize { width: size.w as u32, height: size.h as u32 }
+				}
 			}
-		}
+		)+
 	};
 }
 
-dim_physical_size_equivalent!(u32);
-dim_physical_size_equivalent!(i32);
+dim_physical_size_equivalent!(i32, u32);
 
 #[derive(Clone, Copy, Debug)]
 pub struct Rect<T: Copy> {
@@ -144,31 +183,32 @@ where
 }
 
 macro_rules! apply_interface_int {
-	($type: ty) => {
-		impl Rect<$type> {
-			pub fn scale4(mut self, scale4: u32) -> Self {
-				let scale4 = scale4 as $type;
-				self.top_left.x = scale4 * self.top_left.x / 4;
-				self.top_left.y = scale4 * self.top_left.y / 4;
-				self.dims.w = scale4 * self.dims.w / 4;
-				self.dims.h = scale4 * self.dims.h / 4;
-				self
+	($($t: ty),+ ) => {
+		$(
+			impl Rect<$t> {
+				pub fn scale4(mut self, scale4: u32) -> Self {
+					let scale4 = scale4 as $t;
+					self.top_left.x = scale4 * self.top_left.x / 4;
+					self.top_left.y = scale4 * self.top_left.y / 4;
+					self.dims.w = scale4 * self.dims.w / 4;
+					self.dims.h = scale4 * self.dims.h / 4;
+					self
+				}
+				pub fn offset(mut self, offset_x: $t, offset_y: $t) -> Self {
+					self.top_left.x += offset_x;
+					self.top_left.y += offset_y;
+					self
+				}
+				/// Takes a rectangle with top left at the beginning of the interface and translates+resizes it
+				pub fn to_interface(self, interface_begin: $t, scale4: u32) -> Self {
+					self.scale4(scale4).offset(interface_begin, 0)
+				}
 			}
-			pub fn offset(mut self, offset_x: $type, offset_y: $type) -> Self {
-				self.top_left.x += offset_x;
-				self.top_left.y += offset_y;
-				self
-			}
-			/// Takes a rectangle with top left at the beginning of the interface and translates+resizes it
-			pub fn to_interface(self, interface_begin: $type, scale4: u32) -> Self {
-				self.scale4(scale4).offset(interface_begin, 0)
-			}
-		}
+		)+
 	};
 }
 
-apply_interface_int!(i32);
-apply_interface_int!(u32);
+apply_interface_int!(i32, u32);
 
 impl RectI {
 	pub fn from_float(pos: Point2<f32>, dims: Dimensions<f32>) -> RectI {
