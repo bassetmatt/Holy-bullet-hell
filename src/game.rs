@@ -238,7 +238,7 @@ impl Game {
 		}
 		let menu_choice = match self.state {
 			RunState::Menu(choice) => choice,
-			_ => panic!("Not in menu state"),
+			_ => unreachable!("Not in menu state"),
 		};
 		let is_main_menu = matches!(
 			menu_choice,

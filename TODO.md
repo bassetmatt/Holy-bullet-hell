@@ -1,20 +1,18 @@
 # TODO
 
 ## Code
-- [x] Refactor `draw_sprite` & `draw_text` asap
-- [ ] Consider putting the drawing stuff in function, and maybe even a separate file
+- [ ] Refactor draw to be better at some point
+- [ ] Rebalance code between `game.rs`, `draw.rs` and `gameplay.rs`
 
 ## Interface
 - [x] Player HP
-- [ ] Score ????
-- [ ] Things
+- [x] Score
 - [ ] Debug
-  - [x] FPS ?
+  - [x] FPS
   - [ ] Time elapsed
   - [ ] More infos on game
 
-## Render
-- [ ] ??
-
 ## Gameplay
-- [ ] ??
+- [ ] Better enemy spawning
+- [ ] Better enemy movement
+- [ ] Better enemy shooting pattern

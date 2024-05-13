@@ -320,7 +320,6 @@ pub fn draw_rect(frame_buffer: &mut FrameBuffer, dst: RectI, mut color: [u8; 4])
 	}
 }
 
-// TODO: Change arguments to FrameBuffer
 fn char_position(c: char) -> Option<(u32, u32)> {
 	let fourth_line = "`~!@#$%^&*'\".";
 	let fifth_line = "()[]{}?/\\|:;,";
@@ -426,28 +425,6 @@ fn draw_sprite(
 			px[3] = 0xff;
 		}
 		frame_buffer.buffer.frame_mut()[pixel_bytes].copy_from_slice(&px);
-	}
-}
-
-// TODO: Move to gameplay.rs (I think?)
-impl RectI {
-	fn life_bar_full(pos: Point2<f32>, dims: Dimensions<f32>) -> RectI {
-		RectI {
-			top_left: Point2 {
-				x: (pos.x - dims.w / 2.).round() as i32,
-				y: (pos.y - dims.h / 2.).round() as i32 - 8,
-			},
-			dims: Dimensions { w: dims.w.round() as i32, h: 8 },
-		}
-	}
-	fn life_bar(pos: Point2<f32>, dims: Dimensions<f32>, hp_ratio: f32) -> RectI {
-		RectI {
-			top_left: Point2 {
-				x: (pos.x - dims.w / 2.).round() as i32,
-				y: (pos.y - dims.h / 2.).round() as i32 - 8,
-			},
-			dims: Dimensions { w: (dims.w * hp_ratio).round() as i32, h: 8 },
-		}
 	}
 }
 
