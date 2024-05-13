@@ -240,69 +240,72 @@ impl Game {
 			RunState::Menu(choice) => choice,
 			_ => unreachable!("Not in menu state"),
 		};
-		let is_main_menu = matches!(
-			menu_choice,
-			MenuChoice::Play | MenuChoice::Options | MenuChoice::Quit
-		);
 		match key {
 			Key::Named(Escape) => {
-				if is_main_menu {
-					self.state = RunState::Menu(MenuChoice::Quit);
-				}
-				if menu_choice == MenuChoice::Resolution {
-					self.state = RunState::Menu(MenuChoice::Options);
-				} else if matches!(menu_choice, MenuChoice::Level(_)) {
-					self.state = RunState::Menu(MenuChoice::Play);
-				}
 				self.audio.play_sound(SoundBase::MenuBack);
+				self.state = RunState::Menu(match menu_choice {
+					MenuChoice::Play | MenuChoice::Options | MenuChoice::Quit => MenuChoice::Quit,
+					MenuChoice::Resolution => MenuChoice::Options,
+					MenuChoice::Level(_) => MenuChoice::Play,
+					// Allow for future proofing
+					#[allow(unreachable_patterns)]
+					_ => unimplemented!("Menu State '{:?}' not implemented for Esc", menu_choice),
+				});
 			},
 			Key::Named(ArrowDown) => {
-				if is_main_menu {
-					self.state = RunState::Menu(match menu_choice {
-						MenuChoice::Play => MenuChoice::Options,
-						MenuChoice::Options => MenuChoice::Quit,
-						MenuChoice::Quit => MenuChoice::Play,
-						_ => unreachable!("Invalid menu choice"),
-					})
-				} else if let MenuChoice::Level(id) = menu_choice {
-					let id = (id + 1) % self.levels.len() as u16;
-					self.state = RunState::Menu(MenuChoice::Level(id));
-				} else if menu_choice == MenuChoice::Resolution {
-					let res_choice = &mut self.config.resolution_choice;
-					*res_choice = (*res_choice + 1) % DRAW_CONSTANTS.sizes.len() as u8;
-					self.window.request_window_resize(*res_choice);
-				} else {
-					unimplemented!(
-						"Menu choice '{:?}' not implemented for Arrow Down",
-						menu_choice
-					);
-				}
 				self.audio.play_sound(SoundBase::MenuMove);
+				self.state = match menu_choice {
+					MenuChoice::Play | MenuChoice::Options | MenuChoice::Quit => {
+						RunState::Menu(match menu_choice {
+							MenuChoice::Play => MenuChoice::Options,
+							MenuChoice::Options => MenuChoice::Quit,
+							MenuChoice::Quit => MenuChoice::Play,
+							_ => panic!("Invalid main menu choice"),
+						})
+					},
+					MenuChoice::Level(id) => {
+						let new_id = (id + 1) % self.levels.len() as u16;
+						RunState::Menu(MenuChoice::Level(new_id))
+					},
+					MenuChoice::Resolution => {
+						let res_choice = &mut self.config.resolution_choice;
+						*res_choice = (*res_choice + 1) % DRAW_CONSTANTS.sizes.len() as u8;
+						self.window.request_window_resize(*res_choice);
+						self.state
+					},
+					// Allow for future proofing
+					#[allow(unreachable_patterns)]
+					_ => unimplemented!("Menu State '{:?}' not implemented for ↓", menu_choice),
+				};
 			},
 			Key::Named(ArrowUp) => {
-				if is_main_menu {
-					self.state = RunState::Menu(match menu_choice {
-						MenuChoice::Play => MenuChoice::Quit,
-						MenuChoice::Options => MenuChoice::Play,
-						MenuChoice::Quit => MenuChoice::Options,
-						_ => panic!("Invalid menu choice"),
-					})
-				} else if let MenuChoice::Level(id) = menu_choice {
-					let id = (id - 1) % self.levels.len() as u16;
-					self.state = RunState::Menu(MenuChoice::Level(id));
-				} else if menu_choice == MenuChoice::Resolution {
-					let res_choice = &mut self.config.resolution_choice;
-					*res_choice = (*res_choice - 1) % DRAW_CONSTANTS.sizes.len() as u8;
-					self.window.request_window_resize(*res_choice);
-				} else {
-					unimplemented!(
-						"Menu choice '{:?}' not implemented for Arrow Up",
-						menu_choice
-					);
-				}
 				self.audio.play_sound(SoundBase::MenuMove);
+				self.state = match menu_choice {
+					MenuChoice::Play | MenuChoice::Options | MenuChoice::Quit => {
+						RunState::Menu(match menu_choice {
+							MenuChoice::Play => MenuChoice::Quit,
+							MenuChoice::Options => MenuChoice::Play,
+							MenuChoice::Quit => MenuChoice::Options,
+							_ => panic!("Invalid main menu choice"),
+						})
+					},
+					MenuChoice::Level(id) => {
+						let new_id = (id - 1) % self.levels.len() as u16;
+						RunState::Menu(MenuChoice::Level(new_id))
+					},
+					MenuChoice::Resolution => {
+						let res_choice = &mut self.config.resolution_choice;
+						*res_choice = (*res_choice - 1) % DRAW_CONSTANTS.sizes.len() as u8;
+						self.window.request_window_resize(*res_choice);
+						self.state
+					},
+					// Allow for future proofing
+					#[allow(unreachable_patterns)]
+					_ => unimplemented!("Menu State '{:?}' not implemented for ↑", menu_choice),
+				};
 			},
 			Key::Named(Enter) => {
+				self.audio.play_sound(SoundBase::MenuSelect);
 				self.state = match menu_choice {
 					MenuChoice::Play => RunState::Menu(MenuChoice::Level(0)),
 					MenuChoice::Options => RunState::Menu(MenuChoice::Resolution),
@@ -312,9 +315,10 @@ impl Game {
 						RunState::Playing
 					},
 					MenuChoice::Resolution => RunState::Menu(MenuChoice::Options),
+					// Allow for future proofing
+					#[allow(unreachable_patterns)]
 					_ => unimplemented!("Menu State '{:?}' not implemented for Enter", menu_choice),
 				};
-				self.audio.play_sound(SoundBase::MenuSelect);
 			},
 			_ => {},
 		}
