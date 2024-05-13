@@ -11,7 +11,7 @@ use crate::{
 	coords::Dimensions,
 	draw::{create_window, FrameBuffer, ResizableWindow, Sheets, DRAW_CONSTANTS},
 	gameplay::{Cooldown, EnemyType, Event, EventType, World},
-	sound::Audio,
+	sound::{Audio, SoundBase},
 };
 
 const WORLD_SIZE: Dimensions<f32> = Dimensions {
@@ -254,6 +254,7 @@ impl Game {
 				} else if matches!(menu_choice, MenuChoice::Level(_)) {
 					self.state = RunState::Menu(MenuChoice::Play);
 				}
+				self.audio.play_sound(SoundBase::MenuBack);
 			},
 			Key::Named(ArrowDown) => {
 				if is_main_menu {
@@ -261,7 +262,7 @@ impl Game {
 						MenuChoice::Play => MenuChoice::Options,
 						MenuChoice::Options => MenuChoice::Quit,
 						MenuChoice::Quit => MenuChoice::Play,
-						_ => panic!("Invalid menu choice"),
+						_ => unreachable!("Invalid menu choice"),
 					})
 				} else if let MenuChoice::Level(id) = menu_choice {
 					let id = (id + 1) % self.levels.len() as u16;
@@ -270,7 +271,13 @@ impl Game {
 					let res_choice = &mut self.config.resolution_choice;
 					*res_choice = (*res_choice + 1) % DRAW_CONSTANTS.sizes.len() as u8;
 					self.window.request_window_resize(*res_choice);
+				} else {
+					unimplemented!(
+						"Menu choice '{:?}' not implemented for Arrow Down",
+						menu_choice
+					);
 				}
+				self.audio.play_sound(SoundBase::MenuMove);
 			},
 			Key::Named(ArrowUp) => {
 				if is_main_menu {
@@ -287,25 +294,27 @@ impl Game {
 					let res_choice = &mut self.config.resolution_choice;
 					*res_choice = (*res_choice - 1) % DRAW_CONSTANTS.sizes.len() as u8;
 					self.window.request_window_resize(*res_choice);
+				} else {
+					unimplemented!(
+						"Menu choice '{:?}' not implemented for Arrow Up",
+						menu_choice
+					);
 				}
+				self.audio.play_sound(SoundBase::MenuMove);
 			},
-			Key::Named(Enter) => match menu_choice {
-				MenuChoice::Play => {
-					self.state = RunState::Menu(MenuChoice::Level(0));
-				},
-				MenuChoice::Options => {
-					self.state = RunState::Menu(MenuChoice::Resolution);
-				},
-				MenuChoice::Quit => {
-					self.state = RunState::Quitting;
-				},
-				MenuChoice::Level(id) => {
-					self.state = RunState::Playing;
-					self.start_level(id as u32);
-				},
-				MenuChoice::Resolution => {
-					self.state = RunState::Menu(MenuChoice::Options);
-				},
+			Key::Named(Enter) => {
+				self.state = match menu_choice {
+					MenuChoice::Play => RunState::Menu(MenuChoice::Level(0)),
+					MenuChoice::Options => RunState::Menu(MenuChoice::Resolution),
+					MenuChoice::Quit => RunState::Quitting,
+					MenuChoice::Level(id) => {
+						self.start_level(id as u32);
+						RunState::Playing
+					},
+					MenuChoice::Resolution => RunState::Menu(MenuChoice::Options),
+					_ => unimplemented!("Menu State '{:?}' not implemented for Enter", menu_choice),
+				};
+				self.audio.play_sound(SoundBase::MenuSelect);
 			},
 			_ => {},
 		}

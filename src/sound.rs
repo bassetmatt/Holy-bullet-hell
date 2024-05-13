@@ -13,9 +13,9 @@ use kira::{
 pub enum SoundBase {
 	PlayerShoot,
 	_MainMenu,
-	_MenuSelect,
-	_MenuBack,
-	_MenuMove,
+	MenuSelect,
+	MenuBack,
+	MenuMove,
 	_GameMusic,
 }
 
@@ -41,15 +41,23 @@ impl Audio {
 	}
 
 	fn load_sounds(&mut self) {
-		let level_dir: &Path = Path::new("./assets/audio");
-		if !level_dir.exists() {
+		let sound_dir: &Path = Path::new("./assets/audio");
+		if !sound_dir.exists() {
 			panic!("Audio directory doesn't exist");
 		}
-		// TODO: Better management for multiple files?
-		self.data.insert(
-			SoundBase::PlayerShoot,
-			StaticSoundData::from_file("./assets/audio/player_shoot.wav", Default::default()).unwrap(),
-		);
+		// Import all sounds
+		//? Better way to do this?
+		for (sound_type, file_name) in &[
+			(SoundBase::PlayerShoot, "player_shoot.wav"),
+			(SoundBase::MenuBack, "menu_back.wav"),
+			(SoundBase::MenuMove, "menu_move.wav"),
+			(SoundBase::MenuSelect, "menu_select.wav"),
+		] {
+			self.data.insert(
+				*sound_type,
+				StaticSoundData::from_file(sound_dir.join(file_name), Default::default()).unwrap(),
+			);
+		}
 	}
 
 	pub fn play_sound(&mut self, sound_type: SoundBase) -> usize {
