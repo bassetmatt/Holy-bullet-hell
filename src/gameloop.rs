@@ -61,7 +61,7 @@ impl ApplicationHandler for EventLoopState {
 		game.infos.dt = Instant::elapsed(&game.infos.t);
 		game.infos.t = Instant::now();
 		game.update_fps();
-
+		game.audio.delete_ended_sounds();
 		match game.state {
 			RunState::Playing => {
 				game.tick(event_loop);
